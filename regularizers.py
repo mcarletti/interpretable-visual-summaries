@@ -22,6 +22,13 @@ def tv_reg(input_tensor, tv_beta):
     return row_grad + col_grad
 
 
+def less_reg(predictions, target_predictions):
+    '''Compute the difference between the predictions.
+    Encourages lower predictions than the target.
+    '''
+    return torch.mean(torch.clamp(predictions - target_predictions, min=0))
+
+
 def lasso_reg(input_tensor):
     '''The input_tensor has values between 0 and 1.
     Force the optimizer to convert the masked pixel values

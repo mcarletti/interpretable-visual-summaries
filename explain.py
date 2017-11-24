@@ -3,9 +3,10 @@ import torch
 import numpy as np
 import cv2
 import os
+import time
 
 import utils
-from regularizers import l1_reg, tv_reg, lasso_reg
+from regularizers import l1_reg, tv_reg, less_reg, lasso_reg
 
 from collections import namedtuple
 
@@ -16,7 +17,9 @@ Params = namedtuple('Params', [
                             'tv_beta',
                             'l1_coeff',
                             'tv_coeff',
+                            'less_coeff',
                             'lasso_coeff',
+                            'noise_sigma',
                             'noise_scale',
                             'target_shape'])
 
@@ -36,17 +39,12 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
     # scale between 0 and 1 with 32-bit color depth
     img = np.float32(original_img) / 255
 
-    # generate a perturbated version of the input image as the mean
-    # between a gaussian-blurred and median-blurred version of the
-    # original image
-    blurred_img1 = cv2.GaussianBlur(img, (11, 11), 5)
-    blurred_img2 = np.float32(cv2.medianBlur(original_img, 11)) / 255
-    # this image is used to mask the original image
-    blurred_img_numpy = (blurred_img1 + blurred_img2) / 2
+    # generate a perturbated version of the input image
+    blurred_img_numpy = cv2.GaussianBlur(img, (11, 11), 10)
     
     # prepare image to feed to the model
     img = utils.preprocess_image(img, use_cuda) # original image
-    blurred_img = utils.preprocess_image(blurred_img2, use_cuda) # blurred version of input image
+    blurred_img = utils.preprocess_image(blurred_img_numpy, use_cuda) # blurred version of input image
     mask = utils.numpy_to_torch(mask_init, use_cuda=use_cuda) # init mask
 
     upsample = torch.nn.Upsample(size=params.target_shape, mode='bilinear')
@@ -58,7 +56,8 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
     optimizer = torch.optim.Adam([mask], lr=params.learning_rate)
 
     # compute the target output
-    targets = torch.nn.Softmax()(model(img))
+    target_preds = model(img)
+    targets = torch.nn.Softmax()(target_preds)
     category, target_prob, label = utils.get_class_info(targets)
     print("Category with highest probability:", (label, category, target_prob))
 
@@ -84,19 +83,23 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
         # https://arxiv.org/abs/1706.03825
         # https://pair-code.github.io/saliency/
         noise = np.zeros(params.target_shape + (3,), dtype = np.float32)
-        noise = noise + cv2.randn(noise, 0., 0.2)
+        if params.noise_sigma != 0:
+            noise = noise + cv2.randn(noise, 0., params.noise_sigma)
         noise = utils.numpy_to_torch(noise, use_cuda=use_cuda)
         noisy_perturbated_input = perturbated_input + noise * params.noise_scale
         
         # compute current prediction
-        outputs = torch.nn.Softmax()(model(noisy_perturbated_input))
-        output_prob = outputs[0, category]
+        preds = model(noisy_perturbated_input)
+        outputs = torch.nn.Softmax()(preds)
 
         # compute the loss and use the regularizers
-        loss = output_prob + \
-                params.l1_coeff * l1_reg(mask) + \
-                params.tv_coeff * tv_reg(mask, params.tv_beta) + \
-                params.lasso_coeff * lasso_reg(mask)
+        class_loss = outputs[0, category]
+        l1_loss = params.l1_coeff * l1_reg(mask)
+        tv_loss = params.tv_coeff * tv_reg(mask, params.tv_beta)
+        lasso_loss = params.lasso_coeff * lasso_reg(mask)
+        less_loss = params.less_coeff * less_reg(preds, target_preds)
+
+        loss = class_loss + l1_loss + tv_loss + lasso_loss
 
         # update the optimization process
         optimizer.zero_grad()
@@ -120,6 +123,8 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
 
 if __name__ == '__main__':
 
+    t_start = time.time()
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_image', type=str, required=True)
     parser.add_argument('--dest_folder', type=str, required=True)
@@ -130,7 +135,7 @@ if __name__ == '__main__':
 
     print('Loading model')
     model = utils.load_model(use_cuda)
-    target_shape = (224, 224)
+    target_shape = (299, 299)
 
     # load the BGR image, resize it to the right resolution
     original_img = cv2.imread(args.input_image, 1)
@@ -141,11 +146,13 @@ if __name__ == '__main__':
 
     params = Params(
         learning_rate = 0.1,
-        max_iterations = 500,
+        max_iterations = 300,
         tv_beta = 3,      # exponential tv factor
         l1_coeff = 0.01,  # reduces number of masked pixels
         tv_coeff = 0.2,   # encourages compact and smooth heatmaps
+        less_coeff = 0.,  # encourages similarity between predictions
         lasso_coeff = 0., # force masked pixels to binary values
+        noise_sigma = 0., # sigma of additional perturbation
         noise_scale = 1., # scale factor of additional perturbation
         target_shape = target_shape)
 
@@ -163,7 +170,7 @@ if __name__ == '__main__':
     out = os.path.join(args.dest_folder, 'smooth')
     utils.save(original_img, blurred_img_numpy, upsampled_mask, dest_folder=out)
 
-    #data = 'filename, target_prob, smooth_mask_prob, smooth_drop, sharp_mask_prob, sharp_drop, sharp/smooth drop ratio\n'
+    #data = 'filename, target_prob, smooth_mask_prob, smooth_drop, sharp_mask_prob, sharp_drop\n'
     smooth_drop = (target_prob - output_prob) / target_prob
     data = args.input_image + ',' + str(target_prob) + ',' + str(output_prob) + ',' + str(smooth_drop)
 
@@ -172,11 +179,13 @@ if __name__ == '__main__':
 
     params = Params(
         learning_rate = 0.1,
-        max_iterations = 500,
+        max_iterations = 300,
         tv_beta = 7,
         l1_coeff = 0.075,
         tv_coeff = 2.,
+        less_coeff = 0.,
         lasso_coeff = 1.,
+        noise_sigma = 0.,
         noise_scale = 10.,
         target_shape = target_shape)
 
@@ -199,6 +208,9 @@ if __name__ == '__main__':
     utils.save(original_img, blurred_img_numpy, upsampled_mask, dest_folder=out)
 
     sharp_drop = (target_prob - output_prob) / target_prob
-    data += ',' + str(output_prob) + ',' + str(sharp_drop) + ',' + str(sharp_drop/smooth_drop) + '\n'
+    data += ',' + str(output_prob) + ',' + str(sharp_drop) + '\n'
     with open(args.results_file, 'a') as fp:
         fp.write(data)
+
+    t_end = time.time()
+    print('Elapsed time: {:.1f} seconds'.format(t_end - t_start))

@@ -1,9 +1,9 @@
 #!/bin/bash
 
-outdir=results/vgg16_bn
+outdir=results/inception_v3
 outfile=$outdir/results.csv
 mkdir -p $outdir
-echo "filename, target_prob, smooth_mask_prob, smooth_drop, sharp_mask_prob, sharp_drop, sharp/smooth drop ratio" > $outfile
+echo "filename, target_prob, smooth_mask_prob, smooth_drop, sharp_mask_prob, sharp_drop" > $outfile
 
 echo "Save results in $outdir"
 

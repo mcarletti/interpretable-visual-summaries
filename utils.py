@@ -8,17 +8,22 @@ import os
 def load_model(use_cuda=False):
     '''Load pretrained model.
     '''
-    model = models.vgg16_bn(pretrained=True)
+    #model = models.alexnet(pretrained=True)
+    model = models.inception_v3(pretrained=True)
+    #model = models.vgg16_bn(pretrained=True)
     model.eval()
 
     if use_cuda:
         model.cuda()
-    
+
     # freeze training
-    for p in model.features.parameters(): # conv layers
+    for p in model.parameters():
+        p.requires_grad = False
+    
+    '''for p in model.features.parameters(): # conv layers
         p.requires_grad = False
     for p in model.classifier.parameters(): # fc layers
-        p.requires_grad = False
+        p.requires_grad = False'''
 
     return model
 
@@ -27,7 +32,7 @@ def get_class_info(pred, label_file='ilsvrc_2012_labels.txt'):
     class_id = np.argmax(pred.cpu().data.numpy())
     class_prob = pred[0, class_id].data.cpu().squeeze().numpy()[0]
     class_labels = np.loadtxt(open(label_file), dtype=object, delimiter='\n')
-    return class_id, class_prob, class_labels[class_id]
+    return class_id, class_prob, str(class_labels[class_id])
 
 
 def numpy_to_torch(image, requires_grad = True, use_cuda=False):

@@ -1,0 +1,25 @@
+VGG16 with Batch Normalization
+
+CATEGORY                    CID     CONFIDENCE
+acoustic guitar (1)         402     0.9968645
+acoustic guitar (2)         546     0.50610071 << electric guitar
+flute (1)                   558     0.99928951
+flute (2)                   558     0.91422296
+flute (3)                   558     0.99896467
+robin (1)                    10     0.89617151 << brambling
+robin (2)                    13     0.68992448 << junco
+robin (3)                    10     0.82946891 << brambling
+rottweiler (1)              234     0.99612182
+rottweiler (2)              234     0.99602169
+saxophone (1)               776     0.9585911
+saxophone (2)               776     0.98780292
+squirrel monkey (1)         382     0.81019789
+squirrel monkey (2)         382     0.46658164
+street sign (1)             919     0.99983227
+street sign (2)             919     0.99905902
+street sign (3)             919     0.53597444
+tabby cat (1)               281     0.46689826
+tabby cat (2)               281     0.71927202
+tabby cat (3)               285     0.57922506 << egyptian cat
+unicycle (1)                880     0.97810215
+unicycle (2)                880     0.6131044

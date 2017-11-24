@@ -1,27 +1,10 @@
-import argparse
 import torch
+from torch.autograd import Variable
 import numpy as np
 import cv2
-import os
-import time
 
 import utils
 from regularizers import l1_reg, tv_reg, less_reg, lasso_reg
-
-from collections import namedtuple
-
-
-Params = namedtuple('Params', [
-                            'learning_rate',
-                            'max_iterations',
-                            'tv_beta',
-                            'l1_coeff',
-                            'tv_coeff',
-                            'less_coeff',
-                            'lasso_coeff',
-                            'noise_sigma',
-                            'noise_scale',
-                            'target_shape'])
 
 
 def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
@@ -30,7 +13,7 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
 
     Params:
         model           : deep neural network or other black box model; e.g. VGG
-        params          : namedtuple of settings
+        params          : namedtuple/recordclass of settings
         original_img    : input image, RGB-8bit
         mask_init       : init heatmap
         use_cuda        : enable/disable GPU usage
@@ -50,7 +33,7 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
     upsample = torch.nn.Upsample(size=params.target_shape, mode='bilinear')
 
     if use_cuda:
-        upsample.cuda()
+        upsample = upsample.cuda()
 
     # optimize only the heatmap
     optimizer = torch.optim.Adam([mask], lr=params.learning_rate)
@@ -99,7 +82,7 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
         lasso_loss = params.lasso_coeff * lasso_reg(mask)
         less_loss = params.less_coeff * less_reg(preds, target_preds)
 
-        loss = class_loss + l1_loss + tv_loss + lasso_loss
+        loss = class_loss + l1_loss + tv_loss + lasso_loss + less_loss
 
         # update the optimization process
         optimizer.zero_grad()
@@ -125,98 +108,111 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
     return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob
 
 
-if __name__ == '__main__':
+# Compute heatmaps using superpixels
 
-    t_start = time.time()
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--input_image', type=str, required=True)
-    parser.add_argument('--dest_folder', type=str, required=True)
-    parser.add_argument('--results_file', type=str, required=True)
-    args = parser.parse_args()
+from skimage.segmentation import slic
 
-    use_cuda = torch.cuda.is_available()
 
-    print('Loading model')
-    model = utils.load_model(use_cuda)
-    target_shape = (224, 224)
+class Superpixel2Pixel(torch.nn.Module):
 
-    # load the BGR image, resize it to the right resolution
-    original_img = cv2.imread(args.input_image, 1)
-    original_img = cv2.resize(original_img, target_shape)
+    def __init__(self, segm_img, use_cuda):
+        super(Superpixel2Pixel, self).__init__()
+        self.segm_img = torch.from_numpy(np.asarray(segm_img, dtype=np.int64))
+        self.use_cuda = use_cuda
 
-    print('*' * 12)
-    print('Computing blurred heatmap')
+    def forward(self, input):
+        n_segm = input.size(0)
+        if self.use_cuda:
+            pixelmask = Variable(torch.zeros(self.segm_img.shape[0], self.segm_img.shape[1]).cuda())
+        else:
+            pixelmask = Variable(torch.zeros(self.segm_img.shape[0], self.segm_img.shape[1]))
+        for s in range(n_segm):
+            inds = self.segm_img == s
+            # pixelmask[inds] = input[s]
+            if self.use_cuda:
+                inds = Variable(inds.type(torch.FloatTensor).cuda())
+            else:
+                inds = Variable(inds.type(torch.FloatTensor))
+            pixelmask = pixelmask + inds * input[s]
+        # for r in range(self.segm_img.shape[0]):
+        #   for c in range(self.segm_img.shape[1]):
+        #       pixelmask[r, c] = input[self.segm_img[r, c]]
+        return pixelmask
 
-    params = Params(
-        learning_rate = 0.1,
-        max_iterations = 300,
-        tv_beta = 3,      # exponential tv factor
-        l1_coeff = 0.01,  # reduces number of masked pixels
-        tv_coeff = 0.2,   # encourages compact and smooth heatmaps
-        less_coeff = 0.,  # encourages similarity between predictions
-        lasso_coeff = 0., # force masked pixels to binary values
-        noise_sigma = 0., # sigma of additional perturbation
-        noise_scale = 1., # scale factor of additional perturbation
-        target_shape = target_shape)
 
-    # assume to mask all the pixels (all ones)
-    # as described in the paper, the resolution of the initial mask
-    # is lower than the processed image because we want to avoid
-    # artifacts in the optimization process; this causes also a "natural"
-    # mask which is blurred due to the upsampling
-    mask_init = np.ones((28, 28), dtype = np.float32)
+def compute_heatmap_using_superpixels(model, original_img, params, mask_init=None, use_cuda=False):
 
-    results = compute_heatmap(model, original_img, params, mask_init, use_cuda)
-    upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob = results
+    img = np.float32(original_img) / 255
+    blurred_img_numpy = cv2.GaussianBlur(img, (11, 11), 10)
 
-    print('Prediction drops to {:.6f}'.format(output_prob))
-    out = os.path.join(args.dest_folder, 'smooth')
-    utils.save(original_img, blurred_img_numpy, upsampled_mask, dest_folder=out)
+    # associate at each pixel the id of the corresponding superpixel
+    segm_img = slic(img.copy()[: , :, ::-1], n_segments=500, compactness=10, sigma=0.5)
+    s2p = Superpixel2Pixel(segm_img, use_cuda)
 
-    #data = 'filename, target_prob, smooth_mask_prob, smooth_drop, smooth_blurred_prob, sharp_mask_prob, sharp_drop, sharp_blurred_prob\n'
-    smooth_drop = (target_prob - output_prob) / target_prob
-    smooth_p = (output_prob - target_prob) / (target_prob - blurred_prob)
-    data = args.input_image + ',' + str(target_prob) + ',' + str(output_prob) + ',' + str(smooth_drop) + ',' + str(blurred_prob) + ',' + str(smooth_p)
+    # generate superpixel initialization image
+    nb_segms = np.max(segm_img) + 1
+    segm_init = np.zeros((nb_segms,), dtype=np.float32)
+    if mask_init is None:
+        segm_init = segm_init + 0.5
+    else:
+        for i in range(nb_segms):
+            segm_init[i] = np.mean(mask_init[segm_img == i])
+            # segm_init[i] = 0.5 if segm_init[i] < 0.5 else segm_init[i]
+    
+    # create superpixel image mask
+    if use_cuda:
+        segm = Variable(torch.from_numpy(segm_init).cuda(), requires_grad=True)
+    else:
+        segm = Variable(torch.from_numpy(segm_init), requires_grad=True)
+    
+    img = utils.preprocess_image(img, use_cuda) # original image
+    blurred_img = utils.preprocess_image(blurred_img_numpy, use_cuda) # blurred version of input image
 
-    print('*' * 12)
-    print('Computing sharp heatmap')
+    optimizer = torch.optim.Adam([segm], lr=params.learning_rate)
+    
+    target_preds = model(img)
+    targets = torch.nn.Softmax()(target_preds)
+    category, target_prob, label = utils.get_class_info(targets)
+    print("Category with highest probability:", (label, category, target_prob))
 
-    params = Params(
-        learning_rate = 0.1,
-        max_iterations = 300,
-        tv_beta = 7,
-        l1_coeff = 0.075,
-        tv_coeff = 2.,
-        less_coeff = 0.,
-        lasso_coeff = 1.,
-        noise_sigma = 0.,
-        noise_scale = 10.,
-        target_shape = target_shape)
+    print("Optimizing.. ")
+    for i in range(params.max_iterations):
+        upsampled_mask = s2p(segm).unsqueeze(0).unsqueeze(0)
+        upsampled_mask = upsampled_mask.expand(1, 3, *params.target_shape)
 
-    # we want to generate a sharp heatmap to simplify the region
-    # explanation and object detection/segmentation
-    # since working on a high resolution mask causes scattered
-    # results, we use as initialization mask the low resolution
-    # output from the previous optimization (reference paper)
-    mask_path = os.path.join(args.dest_folder, 'smooth/mask.png')
-    mask_init = cv2.imread(mask_path, 1)
-    mask_init = cv2.cvtColor(mask_init, cv2.COLOR_BGR2GRAY)
-    mask_init = np.float32(mask_init) / 255
-    mask_init = 1. - mask_init # revert the activations
+        perturbated_input = img.mul(upsampled_mask) + \
+                            blurred_img.mul(1 - upsampled_mask)
 
-    results = compute_heatmap(model, original_img, params, mask_init, use_cuda)
-    upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob = results
+        noise = np.zeros(params.target_shape + (3,), dtype = np.float32)
+        if params.noise_sigma != 0:
+            noise = noise + cv2.randn(noise, 0., params.noise_sigma)
+        noise = utils.numpy_to_torch(noise, use_cuda=use_cuda)
+        noisy_perturbated_input = perturbated_input + noise * params.noise_scale
+        
+        preds = model(noisy_perturbated_input)
+        outputs = torch.nn.Softmax()(preds)
 
-    print('Prediction drops to {:.6f}'.format(output_prob))
-    out = os.path.join(args.dest_folder, 'sharp')
-    utils.save(original_img, blurred_img_numpy, upsampled_mask, dest_folder=out)
+        current_mask = segm # upsampled_mask
 
-    sharp_drop = (target_prob - output_prob) / target_prob
-    sharp_p = (output_prob - target_prob) / (target_prob - blurred_prob)
-    data += ',' + str(output_prob) + ',' + str(sharp_drop) + ',' + str(blurred_prob) + ',' + str(sharp_p) + '\n'
-    with open(args.results_file, 'a') as fp:
-        fp.write(data)
+        class_loss = outputs[0, category]
+        l1_loss = params.l1_coeff * l1_reg(current_mask)
+        tv_loss = params.tv_coeff * tv_reg(upsampled_mask, params.tv_beta)
+        lasso_loss = params.lasso_coeff * lasso_reg(current_mask)
+        less_loss = params.less_coeff * less_reg(preds, target_preds)
 
-    t_end = time.time()
-    print('Elapsed time: {:.1f} seconds'.format(t_end - t_start))
+        loss = class_loss + l1_loss + tv_loss + lasso_loss + less_loss
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        segm.data.clamp_(0, 1)
+
+    outputs = torch.nn.Softmax()(model(perturbated_input))
+    output_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
+
+    outputs = torch.nn.Softmax()(model(blurred_img))
+    blurred_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
+
+    return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob

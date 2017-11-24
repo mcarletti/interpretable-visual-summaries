@@ -8,9 +8,9 @@ import os
 def load_model(use_cuda=False):
     '''Load pretrained model.
     '''
-    #model = models.alexnet(pretrained=True)
-    model = models.inception_v3(pretrained=True)
-    #model = models.vgg16_bn(pretrained=True)
+    model = models.alexnet(pretrained=True) # 224x224
+    #model = models.inception_v3(pretrained=True) # 299x299
+    #model = models.vgg16_bn(pretrained=True) # 224x224
     model.eval()
 
     if use_cuda:

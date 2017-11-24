@@ -118,7 +118,11 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
     outputs = torch.nn.Softmax()(model(perturbated_input))
     output_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
 
-    return upsampled_mask, blurred_img_numpy, target_prob, output_prob
+    # compute the prediction on the completely blurred image
+    outputs = torch.nn.Softmax()(model(blurred_img))
+    blurred_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
+
+    return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob
 
 
 if __name__ == '__main__':
@@ -135,7 +139,7 @@ if __name__ == '__main__':
 
     print('Loading model')
     model = utils.load_model(use_cuda)
-    target_shape = (299, 299)
+    target_shape = (224, 224)
 
     # load the BGR image, resize it to the right resolution
     original_img = cv2.imread(args.input_image, 1)
@@ -164,15 +168,16 @@ if __name__ == '__main__':
     mask_init = np.ones((28, 28), dtype = np.float32)
 
     results = compute_heatmap(model, original_img, params, mask_init, use_cuda)
-    upsampled_mask, blurred_img_numpy, target_prob, output_prob = results
+    upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob = results
 
     print('Prediction drops to {:.6f}'.format(output_prob))
     out = os.path.join(args.dest_folder, 'smooth')
     utils.save(original_img, blurred_img_numpy, upsampled_mask, dest_folder=out)
 
-    #data = 'filename, target_prob, smooth_mask_prob, smooth_drop, sharp_mask_prob, sharp_drop\n'
+    #data = 'filename, target_prob, smooth_mask_prob, smooth_drop, smooth_blurred_prob, sharp_mask_prob, sharp_drop, sharp_blurred_prob\n'
     smooth_drop = (target_prob - output_prob) / target_prob
-    data = args.input_image + ',' + str(target_prob) + ',' + str(output_prob) + ',' + str(smooth_drop)
+    smooth_p = (output_prob - target_prob) / (target_prob - blurred_prob)
+    data = args.input_image + ',' + str(target_prob) + ',' + str(output_prob) + ',' + str(smooth_drop) + ',' + str(blurred_prob) + ',' + str(smooth_p)
 
     print('*' * 12)
     print('Computing sharp heatmap')
@@ -201,14 +206,15 @@ if __name__ == '__main__':
     mask_init = 1. - mask_init # revert the activations
 
     results = compute_heatmap(model, original_img, params, mask_init, use_cuda)
-    upsampled_mask, blurred_img_numpy, target_prob, output_prob = results
+    upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob = results
 
     print('Prediction drops to {:.6f}'.format(output_prob))
     out = os.path.join(args.dest_folder, 'sharp')
     utils.save(original_img, blurred_img_numpy, upsampled_mask, dest_folder=out)
 
     sharp_drop = (target_prob - output_prob) / target_prob
-    data += ',' + str(output_prob) + ',' + str(sharp_drop) + '\n'
+    sharp_p = (output_prob - target_prob) / (target_prob - blurred_prob)
+    data += ',' + str(output_prob) + ',' + str(sharp_drop) + ',' + str(blurred_prob) + ',' + str(sharp_p) + '\n'
     with open(args.results_file, 'a') as fp:
         fp.write(data)
 

@@ -46,6 +46,10 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    data = ''
+    if not os.path.exists(args.results_file):
+        data = 'filename, target_prob, smooth_mask_prob, smooth_drop, smooth_blurred_prob, smooth_p, sharp_mask_prob, sharp_drop, sharp_blurred_prob, sharp_p, spx_mask_prob, spx_drop, spx_blurred_prob, spx_p\n'
+
     use_cuda = torch.cuda.is_available()
 
     print('Loading model')
@@ -87,7 +91,7 @@ if __name__ == '__main__':
 
     smooth_drop = (target_prob - output_prob) / target_prob
     smooth_p = (output_prob - target_prob) / (target_prob - blurred_prob)
-    data = args.input_image + ',' + str(target_prob) + ',' + str(output_prob) + ',' + str(smooth_drop) + ',' + str(blurred_prob) + ',' + str(smooth_p)
+    data += args.input_image + ',' + str(target_prob) + ',' + str(output_prob) + ',' + str(smooth_drop) + ',' + str(blurred_prob) + ',' + str(smooth_p)
 
     print('*' * 12)
     print('Computing sharp heatmap')
@@ -146,7 +150,8 @@ if __name__ == '__main__':
     rand_drops = np.zeros((nb_random_tests, 1), dtype=np.float32)
     for i in range(nb_random_tests):
         rand_drops[i] = compute_random_perturbation()
-    print('Random perturbation [mean, var]:', (np.mean(rand_drops), np.var(rand_drops)))
+    print('*' * 12)
+    print('Drop over', nb_random_tests, 'random perturbation [mean, var]:', (np.mean(rand_drops), np.var(rand_drops)))
 
     if args.super_pixel:
         print('*' * 12)

@@ -1,6 +1,13 @@
 import csv
 import os
 import numpy as np
+import argparse
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--csv_file', type=str, default='results/alexnet_5k/results.csv')
+
+args = parser.parse_args()
 
 
 def read_csv(filename):
@@ -8,7 +15,7 @@ def read_csv(filename):
     return np.genfromtxt(filename, delimiter=',', dtype=None)
 
 
-data = read_csv('results/alexnet_original/results.csv')
+data = read_csv(args.csv_file)
 header = data[0, 1:].astype(str)
 fnames = data[1:, 0].astype(str)
 data = data[1:, 1:].astype(np.float32)
@@ -34,15 +41,24 @@ print('\nNormalized softmax score')
 print('smooth:', (np.mean(smooth_p), np.var(smooth_p)))
 print('sharp: ', (np.mean(sharp_p), np.var(sharp_p)))
 
+print('\nMinimum drop difference')
+drop_diff = sharp_drop - smooth_drop
+min_drop_diff = np.min(drop_diff)
+msg = 'positive' if min_drop_diff >= 0. else 'negative'
+print(min_drop_diff, 'is', msg)
 
 import matplotlib.pyplot as plt
 
 
 plt.figure()
-plt.title('Prediction drop after masking')
 plt.grid(True)
 xx = np.linspace(1, N, N)
-plt.scatter(xx, smooth_drop, color='b', label='smooth_drop')
-plt.scatter(xx, sharp_drop, color='r', label='sharp_drop')
+plt.title('Prediction drop after masking')
+plt.plot(xx, smooth_drop, color='b', label='smooth_drop')
+plt.plot(xx, sharp_drop, color='r', label='sharp_drop')
+#plt.plot(xx, spx_drop, color='g', label='spx_drop')
+#plt.title('Drop difference (positive is good)')
+#plt.plot(xx, drop_diff, color='r', label='drop_diff')
 plt.legend()
 plt.show()
+

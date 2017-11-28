@@ -39,10 +39,11 @@ if __name__ == '__main__':
     t_start = time.time()
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_image', type=str, required=True)
-    parser.add_argument('--dest_folder', type=str, required=True)
-    parser.add_argument('--results_file', type=str, required=True)
-    parser.add_argument('--super_pixel', type=bool, default=False)
+    parser.add_argument('--input_image', type=str, default='examples/original/robin3.jpg')
+    parser.add_argument('--dest_folder', type=str, default='results/robin3')
+    parser.add_argument('--results_file', type=str, default='results/robin3/results.csv')
+    parser.add_argument('--super_pixel', action='store_true')
+
     args = parser.parse_args()
 
     use_cuda = torch.cuda.is_available()
@@ -113,6 +114,39 @@ if __name__ == '__main__':
     sharp_drop = (target_prob - output_prob) / target_prob
     sharp_p = (output_prob - target_prob) / (target_prob - blurred_prob)
     data += ',' + str(output_prob) + ',' + str(sharp_drop) + ',' + str(blurred_prob) + ',' + str(sharp_p)
+
+    def compute_random_perturbation():
+        # binarize mask, compute the number of pixels and generate a square mask
+        # to randomly perturbate the pixels of the image
+        mask = upsampled_mask.data.cpu().squeeze().numpy()
+        mask = cv2.threshold(mask, 0.1, 1., cv2.THRESH_BINARY)[1]
+        nb_perturbed_pixels = np.sum(mask)
+        h_size = int(np.sqrt(nb_perturbed_pixels) * 0.5)
+        x_pos = np.random.randint(h_size + 1, target_shape[0] - 1)
+        y_pos = np.random.randint(h_size + 1, target_shape[1] - 1)
+        new_mask = np.zeros(target_shape, dtype=np.float32)
+        new_mask[x_pos-h_size:x_pos+h_size, y_pos-h_size:y_pos+h_size] = 1.
+        new_mask = utils.numpy_to_torch(new_mask, use_cuda=use_cuda)
+
+        # compute the perturbation score using the random mask
+        img = np.float32(original_img) / 255
+        img = utils.preprocess_image(img, use_cuda)
+        target_preds = model(img)
+        targets = torch.nn.Softmax()(target_preds)
+        category, target_prob, label = utils.get_class_info(targets)
+
+        blurred_img = utils.preprocess_image(blurred_img_numpy, use_cuda)
+        perturbated_input = img.mul(new_mask) + blurred_img.mul(1 - new_mask)
+        outputs = torch.nn.Softmax()(model(perturbated_input))
+        output_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
+
+        return (target_prob - output_prob) / target_prob
+
+    nb_random_tests = 200
+    rand_drops = np.zeros((nb_random_tests, 1), dtype=np.float32)
+    for i in range(nb_random_tests):
+        rand_drops[i] = compute_random_perturbation()
+    print('Random perturbation [mean, var]:', (np.mean(rand_drops), np.var(rand_drops)))
 
     if args.super_pixel:
         print('*' * 12)

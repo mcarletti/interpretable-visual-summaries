@@ -7,7 +7,7 @@ import utils
 from regularizers import l1_reg, tv_reg, less_reg, lasso_reg
 
 
-def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
+def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, verbose=True):
     '''Compute image heatmaps according to: https://arxiv.org/abs/1704.03296
     Interpretable Explanations of Black Boxes by Meaningful Perturbation
 
@@ -42,9 +42,11 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
     target_preds = model(img)
     targets = torch.nn.Softmax()(target_preds)
     category, target_prob, label = utils.get_class_info(targets)
-    print("Category with highest probability:", (label, category, target_prob))
+    if verbose:
+        print("Category with highest probability:", (label, category, target_prob))
 
-    print("Optimizing.. ")
+    if verbose:
+        print("Optimizing.. ")
     for i in range(params.max_iterations):
 
         # upsample the mask and use it
@@ -53,6 +55,7 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False):
         # NOTE: the upsampled mask is only used to compute the
         # perturbation on the input image
         upsampled_mask = upsample(mask)
+        #upsampled_mask = utils.blur_variable(upsampled_mask, 5, use_cuda)
         upsampled_mask = upsampled_mask.expand(1, 3, *params.target_shape)
         
         # use the (upsampled) mask to perturbated the input image
@@ -141,7 +144,7 @@ class Superpixel2Pixel(torch.nn.Module):
         return pixelmask
 
 
-def compute_heatmap_using_superpixels(model, original_img, params, mask_init=None, use_cuda=False):
+def compute_heatmap_using_superpixels(model, original_img, params, mask_init=None, use_cuda=False, verbose=True):
 
     img = np.float32(original_img) / 255
     blurred_img_numpy = cv2.GaussianBlur(img, (11, 11), 10)
@@ -174,9 +177,11 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
     target_preds = model(img)
     targets = torch.nn.Softmax()(target_preds)
     category, target_prob, label = utils.get_class_info(targets)
-    print("Category with highest probability:", (label, category, target_prob))
+    if verbose:
+        print("Category with highest probability:", (label, category, target_prob))
 
-    print("Optimizing.. ")
+    if verbose:
+        print("Optimizing.. ")
     for i in range(params.max_iterations):
         upsampled_mask = s2p(segm).unsqueeze(0).unsqueeze(0)
         upsampled_mask = upsampled_mask.expand(1, 3, *params.target_shape)

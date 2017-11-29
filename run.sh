@@ -1,6 +1,6 @@
 #!/bin/bash
 
-outdir=results/alexnet_5k
+outdir=results/alexnet_5k_double_opt
 outfile=$outdir/results.csv
 mkdir -p $outdir
 echo "filename, target_prob, smooth_mask_prob, smooth_drop, smooth_blurred_prob, smooth_p, sharp_mask_prob, sharp_drop, sharp_blurred_prob, sharp_p, spx_mask_prob, spx_drop, spx_blurred_prob, spx_p" > $outfile

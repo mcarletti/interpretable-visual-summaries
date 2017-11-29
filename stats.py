@@ -5,7 +5,7 @@ import argparse
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--csv_file', type=str, default='results/alexnet_5k/results.csv')
+parser.add_argument('--csv_file', type=str, default='results/alexnet_5k_double_opt/results.csv')
 
 args = parser.parse_args()
 
@@ -57,8 +57,10 @@ plt.title('Prediction drop after masking')
 plt.plot(xx, smooth_drop, color='b', label='smooth_drop')
 plt.plot(xx, sharp_drop, color='r', label='sharp_drop')
 #plt.plot(xx, spx_drop, color='g', label='spx_drop')
-#plt.title('Drop difference (positive is good)')
-#plt.plot(xx, drop_diff, color='r', label='drop_diff')
+plt.figure()
+plt.grid(True)
+plt.title('Drop difference (positive is good)')
+plt.plot(xx, drop_diff, color='r', label='drop_diff')
 plt.legend()
 plt.show()
 

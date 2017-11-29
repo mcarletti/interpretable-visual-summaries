@@ -84,6 +84,13 @@ def preprocess_image(image, use_cuda=False):
     return torch.autograd.Variable(preprocessed_img_tensor, requires_grad = False)
 
 
+def blur_variable(var, k_size, use_cuda=False):
+    from scipy.ndimage.filters import gaussian_filter
+    npdata = var.data.cpu().squeeze().numpy()
+    blurred = gaussian_filter(npdata, sigma=k_size)
+    return numpy_to_torch(blurred, use_cuda=use_cuda)
+
+
 def save(original_image, blurred_image, mask, dest_folder='results'):
     '''Save the computed images in dest_folder.
     '''

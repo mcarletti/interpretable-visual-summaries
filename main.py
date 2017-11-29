@@ -26,11 +26,24 @@ Params = recordclass('Params', [
                             'target_shape'])
 
 
-def load_mask(filename):
-    mask_init = cv2.imread(filename, 1)
-    mask_init = cv2.cvtColor(mask_init, cv2.COLOR_BGR2GRAY)
-    mask_init = np.float32(mask_init) / 255
-    mask_init = 1. - mask_init # revert the activations
+def load_mask(filename, target_shape=None, mode='uniform'):
+    if filename is not None and os.path.exists(filename):
+        mask_init = cv2.imread(filename, 1)
+        mask_init = cv2.cvtColor(mask_init, cv2.COLOR_BGR2GRAY)
+        mask_init = np.float32(mask_init) / 255
+        mask_init = 1. - mask_init # revert the activations
+    else:
+        assert target_shape is not None
+        assert mode in ['uniform', 'circular']
+        if mode == 'uniform':
+            mask_init = np.ones(target_shape, dtype = np.float32)
+        if mode == 'circular':
+            radius = target_shape[0] # assuming square shape
+            cx, cy = target_shape[0] // 2, target_shape[1] // 2
+            x, y = np.ogrid[-cx:target_shape[0]-cx, -cy:target_shape[1]-cy]
+            perturbed_pixels = x*x + y*y <= radius*radius
+            mask_init = np.zeros(target_shape, dtype = np.float32)
+            mask_init[perturbed_pixels] = 1.
     return mask_init
 
 
@@ -39,9 +52,9 @@ if __name__ == '__main__':
     t_start = time.time()
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_image', type=str, default='examples/original/robin3.jpg')
-    parser.add_argument('--dest_folder', type=str, default='results/robin3')
-    parser.add_argument('--results_file', type=str, default='results/robin3/results.csv')
+    parser.add_argument('--input_image', type=str, default='examples/original/unicycle2.jpg')
+    parser.add_argument('--dest_folder', type=str, default='results/tmp')
+    parser.add_argument('--results_file', type=str, default='results/tmp/results.csv')
     parser.add_argument('--super_pixel', action='store_true')
 
     args = parser.parse_args()
@@ -67,8 +80,8 @@ if __name__ == '__main__':
         learning_rate = 0.1,
         max_iterations = 300,
         tv_beta = 3,      # exponential tv factor
-        l1_coeff = 0.01,  # reduces number of masked pixels
-        tv_coeff = 0.2,   # encourages compact and smooth heatmaps
+        l1_coeff = 0.01,  # 1e-4,  # reduces number of masked pixels
+        tv_coeff = 0.2,   # 1e-2,  # encourages compact and smooth heatmaps
         less_coeff = 0.,  # encourages similarity between predictions
         lasso_coeff = 0., # force masked pixels to binary values
         noise_sigma = 0., # sigma of additional perturbation
@@ -80,7 +93,9 @@ if __name__ == '__main__':
     # is lower than the processed image because we want to avoid
     # artifacts in the optimization process; this causes also a "natural"
     # mask which is blurred due to the upsampling
-    mask_init = np.ones((28, 28), dtype = np.float32)
+    resize_factor = 8
+    mask_shape = (target_shape[0] // resize_factor, target_shape[1] // resize_factor)
+    mask_init = load_mask(None, mask_shape, 'circular')
 
     results = explain.compute_heatmap(model, original_img, params, mask_init, use_cuda)
     upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob = results
@@ -94,21 +109,40 @@ if __name__ == '__main__':
     data += args.input_image + ',' + str(target_prob) + ',' + str(output_prob) + ',' + str(smooth_drop) + ',' + str(blurred_prob) + ',' + str(smooth_p)
 
     print('*' * 12)
-    print('Computing sharp heatmap')
+    print('Computing sharp heatmap (1)')
 
-    params.tv_beta = 7
-    params.l1_coeff = 0.075
-    params.lasso_coeff = 1.
+    # we just want to start from a smart mask, which is a raw version
+    # of the previous optimization
+    # the main difference beside the lower number of iterations is the
+    # higher total variation coefficient: the higher the tv, the lower
+    # the number of perturbed regions
+    params.max_iterations = 75
+    params.tv_coeff = 1.
+    params.noise_sigma = 0.2
 
     # we want to generate a sharp heatmap to simplify the region
     # explanation and object detection/segmentation
     # since working on a high resolution mask causes scattered
     # results, we use as initialization mask the low resolution
     # output from the previous optimization (reference paper)
-    mask_path = os.path.join(args.dest_folder, 'smooth/mask.png')
-    mask_init = load_mask(mask_path)
+    mask_init = load_mask(None, mask_shape, 'circular')
+    #mask_path = os.path.join(args.dest_folder, 'smooth/mask.png')
+    #mask_init = load_mask(mask_path, target_shape, 'circular')
 
-    results = explain.compute_heatmap(model, original_img, params, mask_init, use_cuda)
+    results = explain.compute_heatmap(model, original_img, params, mask_init, use_cuda, verbose=False)
+    upsampled_mask = results[0]
+
+    print('Computing sharp heatmap (2)')
+
+    params.max_iterations = 225
+    params.l1_coeff = 0.1
+    params.tv_coeff = 0.2
+    params.lasso_coeff = 1.
+    params.noise_sigma = 0.
+
+    mask_init = upsampled_mask.data.cpu().squeeze().numpy()
+
+    results = explain.compute_heatmap(model, original_img, params, mask_init, use_cuda, verbose=False)
     upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob = results
 
     print('Prediction drops to {:.6f}'.format(output_prob))
@@ -119,6 +153,7 @@ if __name__ == '__main__':
     sharp_p = (output_prob - target_prob) / (target_prob - blurred_prob)
     data += ',' + str(output_prob) + ',' + str(sharp_drop) + ',' + str(blurred_prob) + ',' + str(sharp_p)
 
+    '''
     def compute_random_perturbation():
         # binarize mask, compute the number of pixels and generate a square mask
         # to randomly perturbate the pixels of the image
@@ -146,12 +181,13 @@ if __name__ == '__main__':
 
         return (target_prob - output_prob) / target_prob
 
-    nb_random_tests = 200
+    nb_random_tests = 100
     rand_drops = np.zeros((nb_random_tests, 1), dtype=np.float32)
     for i in range(nb_random_tests):
         rand_drops[i] = compute_random_perturbation()
     print('*' * 12)
     print('Drop over', nb_random_tests, 'random perturbation [mean, var]:', (np.mean(rand_drops), np.var(rand_drops)))
+    '''
 
     if args.super_pixel:
         print('*' * 12)
@@ -165,7 +201,7 @@ if __name__ == '__main__':
         mask_path = os.path.join(args.dest_folder, 'sharp/mask.png')
         mask_init = load_mask(mask_path)
 
-        results = explain.compute_heatmap_using_superpixels(model, original_img, params, mask_init, use_cuda)
+        results = explain.compute_heatmap_using_superpixels(model, original_img, params, mask_init, use_cuda, verbose=False)
         upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob = results
 
         print('Prediction drops to {:.6f}'.format(output_prob))

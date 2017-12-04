@@ -3,7 +3,7 @@
 % we normalize the area of affected pixels by the total number of pixels
 % and multiply it by the classification score (hopefully normalized one)
 
-function [sharp_score,smooth_score, sp_score] = computeScore(directory)
+function [sharp_score, smooth_score, sp_score] = computeScore(directory)
 [sharpAcc, smoothAcc, spAcc, sharpValAcc, smoothValAcc, spValAcc] = deal([]);
 %     imgName = 'flute1';
 %     imgNameComplete = [imgName,'.jpg'];
@@ -12,12 +12,24 @@ csv_directory = fullfile(directory,'results.csv');
 imgList = dir(directory);
 imgList = imgList([imgList.isdir]);
 imgList(1:2) = [];
-for j = 1:length(imgList)
-    imgName = imgList(j).name;
-    imgNameComplete = [imgName,'.jpg'];
+dataTable = readtable(csv_directory);
+imgNameList = dataTable{:,1};
 
-    dataTable = readtable(csv_directory);
-    imgNameList = dataTable{:,1};
+sharpAcc = zeros(length(imgList), 1);
+smoothAcc = zeros(length(imgList), 1);
+spAcc = zeros(length(imgList), 1);
+
+sharpValAcc = zeros(length(imgList), 1);
+smoothValAcc = zeros(length(imgList), 1);
+spValAcc = zeros(length(imgList), 1);
+
+for j = 1:length(imgList)
+    
+    disp(['Compute ' num2str(j)]);
+    
+    imgName = imgList(j).name;
+    imgNameComplete = [imgName,'.JPEG'];
+
     for i = 1:length(imgNameList)
         imgNameNow = imgNameList{i};
         imgNameCompleteLen = length(imgNameComplete);
@@ -28,8 +40,6 @@ for j = 1:length(imgList)
             break
         end
     end
-
-    threshold = 001;
 
     sharpPath = fullfile (directory,imgName,'sharp','mask.png');
     smoothPath = fullfile (directory,imgName,'smooth','mask.png');
@@ -66,13 +76,13 @@ for j = 1:length(imgList)
     smoothval_score = smoothCscore * smoothProbValArea;
     spval_score = spCscore * spProbValArea;
     
-    sharpAcc = [sharpAcc , sharp_score];
-    smoothAcc = [smoothAcc , smooth_score];
-    spAcc = [spAcc , sp_score];
+    sharpAcc(j) = sharp_score;
+    smoothAcc(j) = smooth_score;
+    spAcc(j) = sp_score;
     
-    sharpValAcc = [sharpValAcc , sharpval_score];
-    smoothValAcc = [smoothValAcc , smoothval_score];
-    spValAcc = [spValAcc , spval_score];
+    sharpValAcc(j) = sharpval_score;
+    smoothValAcc(j) = smoothval_score;
+    spValAcc(j) = spval_score;
 end
 
 figure

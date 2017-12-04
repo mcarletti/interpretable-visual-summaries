@@ -5,12 +5,23 @@ import cv2
 import os
 
 
-def load_model(use_cuda=False):
+def load_model(modelname, use_cuda=False):
     '''Load pretrained model.
     '''
-    model = models.alexnet(pretrained=True) # 224x224
-    #model = models.inception_v3(pretrained=True) # 299x299
-    #model = models.vgg16_bn(pretrained=True) # 224x224
+    assert modelname in ['alexnet', 'googlenet', 'vgg']
+
+    if modelname == 'alexnet':
+        model = models.alexnet(pretrained=True)
+        target_shape = (224, 224)
+
+    if modelname == 'googlenet':
+        model = models.inception_v3(pretrained=True)
+        target_shape = (299, 299)
+
+    if modelname == 'vgg':
+        model = models.vgg16(pretrained=True)
+        target_shape = (224, 224)
+
     model.eval()
 
     if use_cuda:
@@ -25,7 +36,7 @@ def load_model(use_cuda=False):
     for p in model.classifier.parameters(): # fc layers
         p.requires_grad = False'''
 
-    return model
+    return model, target_shape
 
 
 def get_class_info(pred, label_file='ilsvrc_2012_labels.txt'):
@@ -84,11 +95,18 @@ def preprocess_image(image, use_cuda=False):
     return torch.autograd.Variable(preprocessed_img_tensor, requires_grad = False)
 
 
-def blur_variable(var, k_size, use_cuda=False):
-    from scipy.ndimage.filters import gaussian_filter
-    npdata = var.data.cpu().squeeze().numpy()
-    blurred = gaussian_filter(npdata, sigma=k_size)
-    return numpy_to_torch(blurred, use_cuda=use_cuda)
+class BlurTensor(torch.nn.Module):
+    def __init__(self, use_cuda=False):
+        super(BlurTensor, self).__init__()
+        self.use_cuda = use_cuda
+
+    def forward(self, x, k_size):
+        from scipy.ndimage.filters import gaussian_filter
+        blurred = torch.FloatTensor(gaussian_filter(x.data.cpu().numpy(), sigma=k_size))
+        if self.use_cuda:
+            blurred = blurred.cuda()
+        x.data = blurred
+        return x
 
 
 def save(original_image, blurred_image, mask, dest_folder='results'):

@@ -5,7 +5,7 @@ import argparse
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--csv_file', type=str, default='results/alexnet_5k_double_opt/results.csv')
+parser.add_argument('--csv_file', type=str, default='results/googlenet_5k/results.csv')
 
 args = parser.parse_args()
 
@@ -13,6 +13,11 @@ args = parser.parse_args()
 def read_csv(filename):
     assert os.path.exists(filename)
     return np.genfromtxt(filename, delimiter=',', dtype=None)
+
+
+def remove_nans(nparray):
+    import math
+    return np.asarray([x for x in nparray if not math.isnan(x)])
 
 
 data = read_csv(args.csv_file)
@@ -33,6 +38,9 @@ smooth_mask_prob, smooth_drop, smooth_blurred_prob, smooth_p = data[:, 1], data[
 sharp_mask_prob, sharp_drop, sharp_blurred_prob, sharp_p = data[:, 5], data[:, 6], data[:, 7], data[:, 8]
 spx_mask_prob, spx_drop, spx_blurred_prob, spx_p = data[:, 9], data[:, 10], data[:, 11], data[:, 12]
 
+smooth_p = remove_nans(smooth_p)
+sharp_p = remove_nans(sharp_p)
+
 print('Prediction drop after masking')
 print('smooth:', (np.mean(smooth_drop), np.var(smooth_drop)))
 print('sharp: ', (np.mean(sharp_drop), np.var(sharp_drop)))
@@ -50,17 +58,27 @@ print(min_drop_diff, 'is', msg)
 import matplotlib.pyplot as plt
 
 
+xx = np.linspace(1, N, N)
+
 plt.figure()
 plt.grid(True)
-xx = np.linspace(1, N, N)
 plt.title('Prediction drop after masking')
 plt.plot(xx, smooth_drop, color='b', label='smooth_drop')
 plt.plot(xx, sharp_drop, color='r', label='sharp_drop')
 #plt.plot(xx, spx_drop, color='g', label='spx_drop')
+plt.legend()
+
+plt.figure()
+plt.grid(True)
+plt.title('Correlation')
+plt.scatter(smooth_drop, sharp_drop, color='b', label='correlation')
+plt.legend()
+
 plt.figure()
 plt.grid(True)
 plt.title('Drop difference (positive is good)')
 plt.plot(xx, drop_diff, color='r', label='drop_diff')
 plt.legend()
+
 plt.show()
 

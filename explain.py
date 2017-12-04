@@ -31,6 +31,7 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, verb
     mask = utils.numpy_to_torch(mask_init, use_cuda=use_cuda) # init mask
 
     upsample = torch.nn.Upsample(size=params.target_shape, mode='bilinear')
+    blur = utils.BlurTensor(use_cuda)
 
     if use_cuda:
         upsample = upsample.cuda()
@@ -45,6 +46,8 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, verb
     if verbose:
         print("Category with highest probability:", (label, category, target_prob))
 
+    loss_history = []
+
     if verbose:
         print("Optimizing.. ")
     for i in range(params.max_iterations):
@@ -55,7 +58,8 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, verb
         # NOTE: the upsampled mask is only used to compute the
         # perturbation on the input image
         upsampled_mask = upsample(mask)
-        #upsampled_mask = utils.blur_variable(upsampled_mask, 5, use_cuda)
+        if params.blur:
+            upsampled_mask = blur(upsampled_mask, 5)
         upsampled_mask = upsampled_mask.expand(1, 3, *params.target_shape)
         
         # use the (upsampled) mask to perturbated the input image
@@ -85,11 +89,16 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, verb
         lasso_loss = params.lasso_coeff * lasso_reg(mask)
         less_loss = params.less_coeff * less_reg(preds, target_preds)
 
-        loss = class_loss + l1_loss + tv_loss + lasso_loss + less_loss
+        losses = [class_loss, l1_loss, tv_loss, lasso_loss, less_loss]
+        total_loss = np.sum(losses)
+
+        # convert loss tensors to scalars
+        losses = [total_loss.data.cpu().squeeze().numpy()[0]] + [l.data.cpu().numpy()[0] for l in losses]
+        loss_history.append(losses)
 
         # update the optimization process
         optimizer.zero_grad()
-        loss.backward()
+        total_loss.backward()
         optimizer.step()
 
         # optional: clamping seems to give better results
@@ -108,7 +117,7 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, verb
     outputs = torch.nn.Softmax()(model(blurred_img))
     blurred_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
 
-    return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob
+    return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob, np.asarray(loss_history)
 
 
 # Compute heatmaps using superpixels
@@ -125,22 +134,7 @@ class Superpixel2Pixel(torch.nn.Module):
         self.use_cuda = use_cuda
 
     def forward(self, input):
-        n_segm = input.size(0)
-        if self.use_cuda:
-            pixelmask = Variable(torch.zeros(self.segm_img.shape[0], self.segm_img.shape[1]).cuda())
-        else:
-            pixelmask = Variable(torch.zeros(self.segm_img.shape[0], self.segm_img.shape[1]))
-        for s in range(n_segm):
-            inds = self.segm_img == s
-            # pixelmask[inds] = input[s]
-            if self.use_cuda:
-                inds = Variable(inds.type(torch.FloatTensor).cuda())
-            else:
-                inds = Variable(inds.type(torch.FloatTensor))
-            pixelmask = pixelmask + inds * input[s]
-        # for r in range(self.segm_img.shape[0]):
-        #   for c in range(self.segm_img.shape[1]):
-        #       pixelmask[r, c] = input[self.segm_img[r, c]]
+        pixelmask = input[self.segm_img.cuda().view(-1)].view(self.segm_img.size(0), self.segm_img.size(1))
         return pixelmask
 
 
@@ -150,7 +144,7 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
     blurred_img_numpy = cv2.GaussianBlur(img, (11, 11), 10)
 
     # associate at each pixel the id of the corresponding superpixel
-    segm_img = slic(img.copy()[: , :, ::-1], n_segments=500, compactness=10, sigma=0.5)
+    segm_img = slic(img.copy()[: , :, ::-1], n_segments=2000, compactness=10, sigma=0.5)
     s2p = Superpixel2Pixel(segm_img, use_cuda)
 
     # generate superpixel initialization image
@@ -180,10 +174,14 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
     if verbose:
         print("Category with highest probability:", (label, category, target_prob))
 
+    loss_history = []
+
     if verbose:
         print("Optimizing.. ")
     for i in range(params.max_iterations):
         upsampled_mask = s2p(segm).unsqueeze(0).unsqueeze(0)
+        if params.blur:
+            upsampled_mask = blur(upsampled_mask, 5)
         upsampled_mask = upsampled_mask.expand(1, 3, *params.target_shape)
 
         perturbated_input = img.mul(upsampled_mask) + \
@@ -206,10 +204,14 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
         lasso_loss = params.lasso_coeff * lasso_reg(current_mask)
         less_loss = params.less_coeff * less_reg(preds, target_preds)
 
-        loss = class_loss + l1_loss + tv_loss + lasso_loss + less_loss
+        losses = [class_loss, l1_loss, tv_loss, lasso_loss, less_loss]
+        total_loss = np.sum(losses)
+
+        losses = [total_loss.data.cpu().squeeze().numpy()[0]] + [l.data.cpu().numpy()[0] for l in losses]
+        loss_history.append(losses)
 
         optimizer.zero_grad()
-        loss.backward()
+        total_loss.backward()
         optimizer.step()
 
         segm.data.clamp_(0, 1)
@@ -220,4 +222,4 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
     outputs = torch.nn.Softmax()(model(blurred_img))
     blurred_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
 
-    return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob
+    return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob, np.asarray(loss_history)

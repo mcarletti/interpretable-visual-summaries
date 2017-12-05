@@ -7,7 +7,7 @@ import utils
 from regularizers import l1_reg, tv_reg, less_reg, lasso_reg
 
 
-def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, verbose=True):
+def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, gpu_id=0, verbose=False):
     '''Compute image heatmaps according to: https://arxiv.org/abs/1704.03296
     Interpretable Explanations of Black Boxes by Meaningful Perturbation
 
@@ -26,15 +26,15 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, verb
     blurred_img_numpy = cv2.GaussianBlur(img, (11, 11), 10)
     
     # prepare image to feed to the model
-    img = utils.preprocess_image(img, use_cuda) # original image
-    blurred_img = utils.preprocess_image(blurred_img_numpy, use_cuda) # blurred version of input image
-    mask = utils.numpy_to_torch(mask_init, use_cuda=use_cuda) # init mask
+    img = utils.preprocess_image(img, use_cuda, gpu_id=gpu_id) # original image
+    blurred_img = utils.preprocess_image(blurred_img_numpy, use_cuda, gpu_id=gpu_id) # blurred version of input image
+    mask = utils.numpy_to_torch(mask_init, use_cuda=use_cuda, gpu_id=gpu_id) # init mask
 
     upsample = torch.nn.Upsample(size=params.target_shape, mode='bilinear')
-    blur = utils.BlurTensor(use_cuda)
+    blur = utils.BlurTensor(use_cuda, gpu_id=gpu_id)
 
     if use_cuda:
-        upsample = upsample.cuda()
+        upsample = upsample.cuda(gpu_id)
 
     # optimize only the heatmap
     optimizer = torch.optim.Adam([mask], lr=params.learning_rate)
@@ -75,7 +75,7 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, verb
         noise = np.zeros(params.target_shape + (3,), dtype = np.float32)
         if params.noise_sigma != 0:
             noise = noise + cv2.randn(noise, 0., params.noise_sigma)
-        noise = utils.numpy_to_torch(noise, use_cuda=use_cuda)
+        noise = utils.numpy_to_torch(noise, use_cuda=use_cuda, gpu_id=gpu_id)
         noisy_perturbated_input = perturbated_input + noise * params.noise_scale
         
         # compute current prediction
@@ -117,7 +117,7 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, verb
     outputs = torch.nn.Softmax()(model(blurred_img))
     blurred_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
 
-    return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob, np.asarray(loss_history)
+    return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob, np.asarray(loss_history), category
 
 
 # Compute heatmaps using superpixels
@@ -128,24 +128,25 @@ from skimage.segmentation import slic
 
 class Superpixel2Pixel(torch.nn.Module):
 
-    def __init__(self, segm_img, use_cuda):
+    def __init__(self, segm_img, use_cuda, gpu_id=0):
         super(Superpixel2Pixel, self).__init__()
         self.segm_img = torch.from_numpy(np.asarray(segm_img, dtype=np.int64))
         self.use_cuda = use_cuda
+        self.gpu_id = gpu_id
 
     def forward(self, input):
-        pixelmask = input[self.segm_img.cuda().view(-1)].view(self.segm_img.size(0), self.segm_img.size(1))
+        pixelmask = input[self.segm_img.cuda(self.gpu_id).view(-1)].view(self.segm_img.size(0), self.segm_img.size(1))
         return pixelmask
 
 
-def compute_heatmap_using_superpixels(model, original_img, params, mask_init=None, use_cuda=False, verbose=True):
+def compute_heatmap_using_superpixels(model, original_img, params, mask_init=None, use_cuda=False, gpu_id=0, verbose=False):
 
     img = np.float32(original_img) / 255
     blurred_img_numpy = cv2.GaussianBlur(img, (11, 11), 10)
 
     # associate at each pixel the id of the corresponding superpixel
     segm_img = slic(img.copy()[: , :, ::-1], n_segments=2000, compactness=10, sigma=0.5)
-    s2p = Superpixel2Pixel(segm_img, use_cuda)
+    s2p = Superpixel2Pixel(segm_img, use_cuda, gpu_id=gpu_id)
 
     # generate superpixel initialization image
     nb_segms = np.max(segm_img) + 1
@@ -159,12 +160,12 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
     
     # create superpixel image mask
     if use_cuda:
-        segm = Variable(torch.from_numpy(segm_init).cuda(), requires_grad=True)
+        segm = Variable(torch.from_numpy(segm_init).cuda(gpu_id), requires_grad=True)
     else:
         segm = Variable(torch.from_numpy(segm_init), requires_grad=True)
     
-    img = utils.preprocess_image(img, use_cuda) # original image
-    blurred_img = utils.preprocess_image(blurred_img_numpy, use_cuda) # blurred version of input image
+    img = utils.preprocess_image(img, use_cuda, gpu_id=gpu_id) # original image
+    blurred_img = utils.preprocess_image(blurred_img_numpy, use_cuda, gpu_id=gpu_id) # blurred version of input image
 
     optimizer = torch.optim.Adam([segm], lr=params.learning_rate)
     
@@ -190,7 +191,7 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
         noise = np.zeros(params.target_shape + (3,), dtype = np.float32)
         if params.noise_sigma != 0:
             noise = noise + cv2.randn(noise, 0., params.noise_sigma)
-        noise = utils.numpy_to_torch(noise, use_cuda=use_cuda)
+        noise = utils.numpy_to_torch(noise, use_cuda=use_cuda, gpu_id=gpu_id)
         noisy_perturbated_input = perturbated_input + noise * params.noise_scale
         
         preds = model(noisy_perturbated_input)
@@ -222,4 +223,4 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
     outputs = torch.nn.Softmax()(model(blurred_img))
     blurred_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
 
-    return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob, np.asarray(loss_history)
+    return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob, np.asarray(loss_history), category

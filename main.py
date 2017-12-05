@@ -19,8 +19,9 @@ def get_params():
     parser.add_argument('--input_path',   type=str, default='examples/original')
     parser.add_argument('--dest_folder',  type=str, default='results/tmp')
     parser.add_argument('--results_file', type=str, default='results/tmp/results.csv')
-    parser.add_argument('--no_super_pixel',  action='store_true')
     parser.add_argument('--file_ext',     type=str, default='.jpg')
+    parser.add_argument('--no_super_pixel',  action='store_true')
+    parser.add_argument('--verbose',      action='store_true')
     args = parser.parse_args()
     return args
 
@@ -102,10 +103,10 @@ def run_evaluation(model_info, impath, out_folder=None, gpu_id=0, verbose=False)
 
     params = Params(
         learning_rate = 0.1,
-        max_iterations = 100,
+        max_iterations = 300,
         tv_beta = 3,      # exponential tv factor
-        l1_coeff = 0.01,  # 1e-4,  # reduces number of masked pixels
-        tv_coeff = 0.2,   # 1e-2,  # encourages compact and smooth heatmaps
+        l1_coeff = 0.01,  # reduces number of masked pixels
+        tv_coeff = 1e-4,  # encourages compact and smooth heatmaps
         less_coeff = 0.,  # encourages similarity between predictions
         lasso_coeff = 0., # force masked pixels to binary values
         noise_sigma = 0., # sigma of additional perturbation
@@ -147,12 +148,18 @@ def run_evaluation(model_info, impath, out_folder=None, gpu_id=0, verbose=False)
     if verbose:
         print('*' * 12 + '\nComputing sharp heatmap')
 
-    params.max_iterations = 50
-    params.learning_rate = 0.5
-    params.tv_beta = 7
-    params.l1_coeff = 0.1
-    params.lasso_coeff = 1.
-    params.blur = False
+    params = Params(
+        learning_rate = 0.1,
+        max_iterations = 150,
+        tv_beta = 3,
+        l1_coeff = 0.01,
+        tv_coeff = 1.,
+        less_coeff = 0.,
+        lasso_coeff = 2.,
+        noise_sigma = 0.,
+        noise_scale = 1.,
+        blur = False,
+        target_shape = target_shape)
 
     # we want to generate a sharp heatmap to simplify the region
     # explanation and object detection/segmentation
@@ -184,51 +191,22 @@ def run_evaluation(model_info, impath, out_folder=None, gpu_id=0, verbose=False)
 
     #--------------------------------------------------------------------------
 
-    '''
-    def compute_random_perturbation():
-        # binarize mask, compute the number of pixels and generate a square mask
-        # to randomly perturbate the pixels of the image
-        mask = upsampled_mask.data.cpu().squeeze().numpy()
-        mask = cv2.threshold(mask, 0.1, 1., cv2.THRESH_BINARY)[1]
-        nb_perturbed_pixels = np.sum(mask)
-        h_size = int(np.sqrt(nb_perturbed_pixels) * 0.5)
-        x_pos = np.random.randint(h_size + 1, target_shape[0] - 1)
-        y_pos = np.random.randint(h_size + 1, target_shape[1] - 1)
-        new_mask = np.zeros(target_shape, dtype=np.float32)
-        new_mask[x_pos-h_size:x_pos+h_size, y_pos-h_size:y_pos+h_size] = 1.
-        new_mask = utils.numpy_to_torch(new_mask, use_cuda=use_cuda)
-
-        # compute the perturbation score using the random mask
-        img = np.float32(original_img) / 255
-        img = utils.preprocess_image(img, use_cuda)
-        target_preds = model(img)
-        targets = torch.nn.Softmax()(target_preds)
-        category, target_prob, label = utils.get_class_info(targets)
-
-        blurred_img = utils.preprocess_image(blurred_img_numpy, use_cuda)
-        perturbated_input = img.mul(new_mask) + blurred_img.mul(1 - new_mask)
-        outputs = torch.nn.Softmax()(model(perturbated_input))
-        output_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
-
-        return (target_prob - output_prob) / target_prob
-
-    nb_random_tests = 100
-    rand_drops = np.zeros((nb_random_tests, 1), dtype=np.float32)
-    for i in range(nb_random_tests):
-        rand_drops[i] = compute_random_perturbation()
-    if verbose:
-        print('*' * 12 + '\nDrop over', nb_random_tests, 'random perturbation [mean, var]:', (np.mean(rand_drops), np.var(rand_drops)))
-    '''
-
-    #--------------------------------------------------------------------------
-
     if not args.no_super_pixel:
         if verbose:
             print('*' * 12 + '\nComputing superpixel heatmap')
 
-        params.tv_beta = 3
-        params.l1_coeff = 0.15
-        params.lasso_coeff = 2.
+        params = Params(
+            learning_rate = 0.1,
+            max_iterations = 50,
+            tv_beta = 3,
+            l1_coeff = 0.2,
+            tv_coeff = 1.,
+            less_coeff = 0.,
+            lasso_coeff = 4.,
+            noise_sigma = 0.,
+            noise_scale = 1.,
+            blur = False,
+            target_shape = target_shape)
 
         mask_path = os.path.join(out_folder, 'smooth/mask.png')
         mask_init = load_mask(mask_path)
@@ -289,7 +267,7 @@ if __name__ == '__main__':
             for fname in filenames:
                 try:
                     out_folder = os.path.join(args.dest_folder, os.path.basename(fname)[:-len(ext)])
-                    run_evaluation(model_info, os.path.join(args.input_path, fname), out_folder, gid)    
+                    run_evaluation(model_info, os.path.join(args.input_path, fname), out_folder, gid, verbose=args.verbose)
                 except Exception as e:
                     print(e)
                     #raise e
@@ -330,9 +308,8 @@ if __name__ == '__main__':
         model_info = utils.load_model(args.modelname, HAS_CUDA, gpu_ids[0])
 
         try:
-            run_evaluation(model_info, args.input_path)    
+            run_evaluation(model_info, args.input_path, verbose=args.verbose)    
+            os.rename(args.results_file + '.part' + str(gpu_ids[0]), args.results_file)
         except Exception as e:
             print(e)
             #raise e
-
-        os.rename(args.results_file + '.part' + str(gpu_ids[0]), args.results_file)

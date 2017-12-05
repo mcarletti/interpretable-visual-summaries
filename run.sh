@@ -1,7 +1,7 @@
 #!/bin/bash
 
 modelname=alexnet
-outdir=results/alexnet_sample
+outdir=results/alexnet_5k
 outfile=$outdir/results.csv
 
 mkdir -p $outdir
@@ -9,15 +9,15 @@ mkdir -p $outdir
 
 echo "Save results in $outdir"
 
-#indir=/media/Data/datasets/misc/imagenet_val_5k
-#ext=.JPEG
+indir=/media/Data/datasets/misc/imagenet_val_5k
+ext=.JPEG
 
-indir=examples/original/flute3.jpg
-ext=.jpg
+#indir=examples/original/
+#ext=.jpg
 
 echo "####################################"
 
-python3 main.py --modelname $modelname --input_path $indir --dest_folder $outdir --results_file $outfile --file_ext $ext
+python3 main.py --modelname $modelname --input_path $indir --dest_folder $outdir --results_file $outfile --file_ext $ext $1
 
 echo "####################################"
 echo "DONE"

@@ -107,6 +107,11 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, gpu_
 
     # upsample the computed final mask
     upsampled_mask = upsample(mask)
+    if params.blur:
+        upsampled_mask = blur(upsampled_mask, 5)
+
+    perturbated_input = img.mul(upsampled_mask) + \
+                        blurred_img.mul(1 - upsampled_mask)
 
     # compute the prediction probabilities before
     # and after the perturbation and masking
@@ -157,6 +162,8 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
         for i in range(nb_segms):
             segm_init[i] = np.mean(mask_init[segm_img == i])
             # segm_init[i] = 0.5 if segm_init[i] < 0.5 else segm_init[i]
+
+    blur = utils.BlurTensor(use_cuda, gpu_id=gpu_id)
     
     # create superpixel image mask
     if use_cuda:
@@ -217,6 +224,12 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
 
         segm.data.clamp_(0, 1)
 
+    if params.blur:
+        upsampled_mask = blur(upsampled_mask, 5)
+
+    perturbated_input = img.mul(upsampled_mask) + \
+                        blurred_img.mul(1 - upsampled_mask)
+                        
     outputs = torch.nn.Softmax()(model(perturbated_input))
     output_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
 

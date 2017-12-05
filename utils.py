@@ -5,7 +5,7 @@ import cv2
 import os
 
 
-def load_model(modelname, use_cuda=False):
+def load_model(modelname, use_cuda=False, gpu_id=0):
     '''Load pretrained model.
     '''
     assert modelname in ['alexnet', 'googlenet', 'vgg']
@@ -25,7 +25,7 @@ def load_model(modelname, use_cuda=False):
     model.eval()
 
     if use_cuda:
-        model.cuda()
+        model.cuda(gpu_id)
 
     # freeze training
     for p in model.parameters():
@@ -46,7 +46,7 @@ def get_class_info(pred, label_file='ilsvrc_2012_labels.txt'):
     return class_id, class_prob, str(class_labels[class_id])
 
 
-def numpy_to_torch(image, requires_grad = True, use_cuda=False):
+def numpy_to_torch(image, requires_grad = True, use_cuda=False, gpu_id=0):
     '''Convert numpy image to torch variable (differentiable tensor).
     '''
 
@@ -62,12 +62,12 @@ def numpy_to_torch(image, requires_grad = True, use_cuda=False):
     output.unsqueeze_(0) # make it a batch
 
     if use_cuda:
-        output = output.cuda()
+        output = output.cuda(gpu_id)
 
     return torch.autograd.Variable(output, requires_grad = requires_grad)
 
 
-def preprocess_image(image, use_cuda=False):
+def preprocess_image(image, use_cuda=False, gpu_id=0):
     '''Prepare a cv2 image to feed a VGG classifier.
     '''
 
@@ -90,21 +90,22 @@ def preprocess_image(image, use_cuda=False):
     preprocessed_img_tensor.unsqueeze_(0) # make it a batch
 
     if use_cuda:
-        preprocessed_img_tensor = preprocessed_img_tensor.cuda()
+        preprocessed_img_tensor = preprocessed_img_tensor.cuda(gpu_id)
 
     return torch.autograd.Variable(preprocessed_img_tensor, requires_grad = False)
 
 
 class BlurTensor(torch.nn.Module):
-    def __init__(self, use_cuda=False):
+    def __init__(self, use_cuda=False, gpu_id=0):
         super(BlurTensor, self).__init__()
         self.use_cuda = use_cuda
+        self.gpu_id = gpu_id
 
     def forward(self, x, k_size):
         from scipy.ndimage.filters import gaussian_filter
         blurred = torch.FloatTensor(gaussian_filter(x.data.cpu().numpy(), sigma=k_size))
         if self.use_cuda:
-            blurred = blurred.cuda()
+            blurred = blurred.cuda(self.gpu_id)
         x.data = blurred
         return x
 

@@ -5,7 +5,7 @@ import argparse
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--csv_file', type=str, default='results/googlenet_5k/results.csv')
+parser.add_argument('--csv_file', type=str, default='results/alexnet_5k/results.csv')
 
 args = parser.parse_args()
 
@@ -21,9 +21,10 @@ def remove_nans(nparray):
 
 
 data = read_csv(args.csv_file)
+data = data[:, :-1]
 header = data[0, 1:].astype(str)
 fnames = data[1:, 0].astype(str)
-data = data[1:, 1:].astype(np.float32)
+data = data[1:, 2:].astype(np.float32)
 
 '''
 0       target_prob

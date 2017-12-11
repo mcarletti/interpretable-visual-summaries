@@ -1,0 +1,193 @@
+import torch
+import utils
+import cv2
+import os
+import numpy as np
+
+
+def get_params():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--modelname', type=str, default='alexnet')
+    parser.add_argument('--impath', type=str, default='results/alexnet_examples_original')
+    parser.add_argument('--top_k', type=int, default=3)
+    parser.add_argument('--cuda', type=bool, default=None)
+    parser.add_argument('--verbose', action='store_true')
+    args = parser.parse_args()
+    return args
+
+
+args = get_params()
+
+HAS_CUDA = args.cuda
+if HAS_CUDA is None:
+    HAS_CUDA = torch.cuda.is_available()
+
+print('Loading model:', args.modelname)
+model, target_shape = utils.load_model(args.modelname, use_cuda=HAS_CUDA)
+
+
+dirinfo = os.listdir(args.impath)
+dirs = [os.path.join(args.impath, d) for d in dirinfo if os.path.isdir(os.path.join(args.impath, d))]
+
+print("Found", len(dirs), "folders")
+nb_img_to_compute = len(dirs)
+
+
+def predict(net, x, class_id=None):
+    outputs = torch.nn.Softmax()(model(x))
+    if class_id is not None:
+        outputs = outputs[0, class_id] # probs
+        outputs = outputs.data.cpu().squeeze().numpy()[0]
+    return outputs
+
+
+global_prop_saliency = []
+global_doa = []
+
+
+for i, d in enumerate(dirs[:nb_img_to_compute]):
+
+    print('Processing', d)
+
+    if args.verbose:
+        print('Loading and preprocessing input image and mask')
+    # load input image
+    original_img = cv2.imread(os.path.join(d, 'smooth/original.png'), 1)
+    original_img = cv2.resize(original_img, target_shape)
+    rgb_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2RGB)
+    scaled_img = np.float32(original_img) / 255
+
+    # generate a perturbated version of the input image
+    blurred_img_numpy = cv2.GaussianBlur(scaled_img, (11, 11), 10)
+
+    # load mask
+    mask_numpy = cv2.imread(os.path.join(d, 'smooth/mask.png'), 1)
+    mask_numpy = 1. - np.float32(mask_numpy) / 255
+
+    # convert images to torch tensors
+    img = utils.preprocess_image(scaled_img, use_cuda=HAS_CUDA)
+    blurred_img = utils.preprocess_image(blurred_img_numpy, use_cuda=HAS_CUDA)
+    mask = utils.numpy_to_torch(mask_numpy, use_cuda=HAS_CUDA)
+
+    if args.verbose:
+        print('Computing classification confidence drop')
+    target_probs = predict(model, img, None)
+    category, target_prob, label = utils.get_class_info(target_probs)
+    if args.verbose:
+        print('Category with highest probability:', (label, category, target_prob))
+
+    perturbated_input = img.mul(mask) + blurred_img.mul(1 - mask)
+    perturbated_prob = predict(model, perturbated_input, category)
+    if args.verbose:
+        print('Confidence after perturbing the input image: {:.6f}'.format(perturbated_prob))
+
+    '''
+    1. extract regions from mask
+    2. for each region, perturbate the original image and compute the drop
+    3. sort the regions according to the drop
+    4. show the first k regions
+    5. compute the drop-over-area score per region
+    '''
+
+    if args.verbose:
+        print('Computing region proposals')
+
+    import matplotlib.pyplot as plt
+    from skimage.measure import label, regionprops
+
+    # binarize mask
+    # revert the image to correctly compute the regions
+    mask_bw = cv2.cvtColor(np.uint8(255. - mask_numpy * 255.), cv2.COLOR_BGR2GRAY)
+    _, mask_bw = cv2.threshold(mask_bw, 128, 255, cv2.THRESH_BINARY)
+    mask_labeled = label(mask_bw)
+    regions = regionprops(mask_labeled)
+
+    prop_saliency = []
+    doa = []
+    min_area = int(np.prod(target_shape) * 0.01)
+    valid_idx = []
+    for pid, props in enumerate(regions):
+        if props.area < min_area:
+            continue
+        valid_idx.append(pid)
+        # extract proposal mask
+        prop_mask = np.ones(mask_bw.shape, dtype=np.float32)
+        for u, v in props.coords:
+            prop_mask[u, v] = 0.
+        # compute contribution
+        prop_mask = utils.numpy_to_torch(prop_mask, use_cuda=HAS_CUDA)
+        perturbated_input = img.mul(prop_mask) + blurred_img.mul(1 - prop_mask)
+        drop = 1. - predict(model, perturbated_input, category)
+        prop_saliency.append(drop)
+        doa.append(drop / props.area)
+        #print('Region saliency: {:.6f}'.format(prop_saliency[-1]))
+
+    prop_saliency = np.asarray(prop_saliency)
+    doa = np.asarray(doa)
+    regions = np.asarray(regions)
+
+    idx = np.argsort(prop_saliency)[::-1][:args.top_k]
+    prop_saliency = prop_saliency[idx]
+    doa[idx]
+    regions = regions[valid_idx][idx]
+
+    panned_prop_saliency = np.zeros((args.top_k,), dtype=np.float32)
+    panned_doa = np.zeros((args.top_k,), dtype=np.float32)
+    for j in range(prop_saliency.shape[0]):
+        panned_prop_saliency[j] = prop_saliency[j]
+        panned_doa[j] = doa[j]
+    global_prop_saliency.append(panned_prop_saliency)
+    global_doa.append(panned_doa)
+
+    plt.figure(0)
+
+    rows = args.top_k + 1 # +1 for original image
+    cols = min(12, nb_img_to_compute)
+    nb_regions = min(args.top_k, regions.shape[0])
+
+    if i >= cols:
+        continue
+
+    for k in range(nb_regions):
+        prop_mask = np.ones(mask_bw.shape, dtype=np.float32)
+        for u, v in regions[k].coords:
+            prop_mask[u, v] = 0.
+        bbox = regions[k].bbox
+        cropped_region = rgb_img[bbox[0]:bbox[2], bbox[1]:bbox[3]]
+        # show mask
+        plt.subplot(rows, cols, i + 1)
+        plt.imshow(rgb_img)
+        plt.imshow(1. - mask_bw, alpha=0.5, cmap=plt.get_cmap('binary'))
+        plt.subplot(rows, cols, i + 1 + cols * (k + 1))
+        plt.imshow(cropped_region)
+        plt.text(0, 0, 'Drop: {:.3f}'.format(prop_saliency[k]), bbox=dict(facecolor='red', alpha=0.5))
+        #plt.text(0, 0, 'DoA:  {:.3f}'.format(doa[k]), bbox=dict(facecolor='blue', alpha=0.5))
+
+global_prop_saliency = np.asarray(global_prop_saliency)
+global_doa = np.asarray(global_doa)
+
+
+def show_graphs(title, data, show=False):
+    plt.figure()
+
+    plt.subplot(1, 2, 1)
+    mu = np.mean(data, axis=0)
+    sd = np.std(data, axis=0)
+    xx = np.linspace(1, args.top_k, args.top_k)
+    plt.plot(xx, mu, 'r', label='mean')
+    plt.plot(xx, mu - sd, 'b--', label='mu +/- sd')
+    plt.plot(xx, mu + sd, 'b--')
+    plt.legend()
+    plt.title(title)
+
+    plt.subplot(1, 2, 2)
+    plt.boxplot(data)
+    #plt.title(title)
+
+
+show_graphs('K-top saliency (drop)', global_prop_saliency)
+show_graphs('K-top Drop-over-Area (DoA)', global_doa)
+
+plt.tight_layout()
+plt.show()

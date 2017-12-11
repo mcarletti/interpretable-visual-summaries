@@ -46,6 +46,11 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, gpu_
     if verbose:
         print("Category with highest probability:", (label, category, target_prob))
 
+    if params.target_id is not None:
+        if category != params.target_id:
+            print("Wrong classification! Skipping")
+            return None
+
     loss_history = []
 
     if verbose:

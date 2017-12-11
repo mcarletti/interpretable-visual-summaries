@@ -110,7 +110,7 @@ class BlurTensor(torch.nn.Module):
         return x
 
 
-def save(original_image, blurred_image, mask, dest_folder='results'):
+def save(original_image, blurred_image, mask, dest_folder='results', save_orig=True):
     '''Save the computed images in dest_folder.
     '''
     # normalize the RGB-8bit image
@@ -141,6 +141,8 @@ def save(original_image, blurred_image, mask, dest_folder='results'):
         os.makedirs(dest_folder)
 
     # save images
+    if save_orig:
+        cv2.imwrite(os.path.join(dest_folder, 'original.png'), np.uint8(original_image))
     cv2.imwrite(os.path.join(dest_folder, 'perturbated.png'), np.uint8(255 * perturbated))
     cv2.imwrite(os.path.join(dest_folder, 'heatmap.png'), np.uint8(255 * heatmap))
     cv2.imwrite(os.path.join(dest_folder, 'mask.png'), np.uint8(255 * mask))

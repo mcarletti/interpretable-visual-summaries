@@ -8,7 +8,7 @@ import explain
 import utils
 from regularizers import l1_reg, tv_reg, less_reg, lasso_reg
 
-#from collections import namedtuple
+from collections import namedtuple
 from recordclass import recordclass # mutable version of namedtuple
 
 
@@ -20,6 +20,8 @@ def get_params():
     parser.add_argument('--dest_folder',  type=str, default='results/tmp')
     parser.add_argument('--results_file', type=str, default='results/tmp/results.csv')
     parser.add_argument('--file_ext',     type=str, default='.jpg')
+    parser.add_argument('--max_images',   type=int, default=None)
+    parser.add_argument('--target_id',    type=int, default=None)
     parser.add_argument('--no_super_pixel',  action='store_true')
     parser.add_argument('--verbose',      action='store_true')
     args = parser.parse_args()
@@ -47,7 +49,8 @@ Params = recordclass('Params', [
                             'noise_sigma',
                             'noise_scale',
                             'blur',
-                            'target_shape'])
+                            'target_shape',
+                            'target_id'])
 
 
 def load_mask(filename, target_shape=None, mode='uniform'):
@@ -65,8 +68,8 @@ def load_mask(filename, target_shape=None, mode='uniform'):
             radius = target_shape[0] // 2 # assuming square shape
             cx, cy = target_shape[0] // 2, target_shape[1] // 2
             x, y = np.ogrid[-cx:target_shape[0]-cx, -cy:target_shape[1]-cy]
-            perturbed_pixels = x*x + y*y > radius*radius
-            mask_init[perturbed_pixels] = 1.
+            pixels = x*x + y*y > radius*radius
+            mask_init[pixels] = 1.
     return mask_init
 
 
@@ -112,7 +115,8 @@ def run_evaluation(model_info, impath, out_folder=None, gpu_id=0, verbose=False)
         noise_sigma = 0., # sigma of additional perturbation
         noise_scale = 1., # scale factor of additional perturbation
         blur = True,      # blur upsampled mask during optimization
-        target_shape = target_shape)
+        target_shape = target_shape,
+        target_id = args.target_id)
 
     # assume to mask all the pixels (all ones)
     # as described in the paper, the resolution of the initial mask
@@ -124,12 +128,15 @@ def run_evaluation(model_info, impath, out_folder=None, gpu_id=0, verbose=False)
     mask_init = load_mask(None, mask_shape, 'circular')
 
     results = explain.compute_heatmap(model, original_img, params, mask_init, HAS_CUDA, gpu_id)
+    if results is None:
+        print("Wrong classification! Skipping")
+        return
     upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob, history, class_id = results
 
     if verbose:
         print('Prediction drops to {:.6f}'.format(output_prob))
     out = os.path.join(out_folder, 'smooth')
-    utils.save(original_img, blurred_img_numpy, upsampled_mask, dest_folder=out)
+    utils.save(original_img, blurred_img_numpy, upsampled_mask, dest_folder=out, save_orig=True)
 
     smooth_drop, smooth_p = compute_stats(target_prob, output_prob, blurred_prob)
     data += impath + ',' + str(class_id) + ',' + str(target_prob) + ',' + str(output_prob) + ',' + str(smooth_drop) + ',' + str(blurred_prob) + ',' + str(smooth_p)
@@ -159,7 +166,8 @@ def run_evaluation(model_info, impath, out_folder=None, gpu_id=0, verbose=False)
         noise_sigma = 0.,
         noise_scale = 1.,
         blur = False,
-        target_shape = target_shape)
+        target_shape = target_shape,
+        target_id = args.target_id)
 
     # we want to generate a sharp heatmap to simplify the region
     # explanation and object detection/segmentation
@@ -175,7 +183,7 @@ def run_evaluation(model_info, impath, out_folder=None, gpu_id=0, verbose=False)
     if verbose:
         print('Prediction drops to {:.6f}'.format(output_prob))
     out = os.path.join(out_folder, 'sharp')
-    utils.save(original_img, blurred_img_numpy, upsampled_mask, dest_folder=out)
+    utils.save(original_img, blurred_img_numpy, upsampled_mask, dest_folder=out, save_orig=False)
 
     sharp_drop, sharp_p = compute_stats(target_prob, output_prob, blurred_prob)
     data += ',' + str(output_prob) + ',' + str(sharp_drop) + ',' + str(blurred_prob) + ',' + str(sharp_p)
@@ -206,7 +214,8 @@ def run_evaluation(model_info, impath, out_folder=None, gpu_id=0, verbose=False)
             noise_sigma = 0.,
             noise_scale = 1.,
             blur = False,
-            target_shape = target_shape)
+            target_shape = target_shape,
+            target_id = args.target_id)
 
         mask_path = os.path.join(out_folder, 'smooth/mask.png')
         mask_init = load_mask(mask_path)
@@ -217,7 +226,7 @@ def run_evaluation(model_info, impath, out_folder=None, gpu_id=0, verbose=False)
         if verbose:
             print('Prediction drops to {:.6f}'.format(output_prob))
         out = os.path.join(out_folder, 'superpixel')
-        utils.save(original_img, blurred_img_numpy, upsampled_mask, dest_folder=out)
+        utils.save(original_img, blurred_img_numpy, upsampled_mask, dest_folder=out, save_orig=False)
 
         spx_drop, spx_p = compute_stats(target_prob, output_prob, blurred_prob)
         data += ',' + str(output_prob) + ',' + str(spx_drop) + ',' + str(blurred_prob) + ',' + str(spx_p)
@@ -255,6 +264,8 @@ if __name__ == '__main__':
         ext = args.file_ext
         filenames = [f for f in dirinfo if f.endswith(ext)]
         filenames = np.sort(filenames).tolist()
+        if args.max_images is not None:
+            filenames = filenames[:args.max_images]
 
         chunk_size = int(len(filenames) // len(gpu_ids))
         fnames = [filenames[i:i+chunk_size] for i in range(0, len(filenames), chunk_size)]
@@ -282,23 +293,25 @@ if __name__ == '__main__':
             return np.genfromtxt(filename, delimiter=',', dtype=None)
 
         header = ''
-        results_data = None
+        t = [None] * len(gpu_ids)
         for gid in gpu_ids:
             data = read_csv(args.results_file + '.part' + str(gid))
             header = data[0, :]
-            cur_data = data[1:, :]
-            results_data = [cur_data] if results_data is None else np.concatenate((results_data, [cur_data]), axis=0)
+            t[gid] = data[1:, :]
+
+        results_data = t[0]
+        for i in range(1, len(gpu_ids)):
+            results_data = np.vstack((results_data, t[i]))
         results_data = np.squeeze(results_data.astype(str))
 
         with open(args.results_file, 'w') as fp:
             t = [str(v.decode('utf-8')) + ',' for v in header]
-            t = str(''.join(t) + '\n')
+            t = ''.join(t) + '\n'
             fp.write(t)
             for i in range(results_data.shape[0]):
-                for j in results_data[i]:
-                    t = [str(k) +',' for k in j]
-                    t = ''.join(t) + '\n'
-                    fp.write(t)
+                t = [str(j) +',' for j in results_data[i]]
+                t = ''.join(t) + '\n'
+                fp.write(t)
 
         for gid in gpu_ids:
             os.remove(args.results_file + '.part' + str(gid))

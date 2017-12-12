@@ -5,7 +5,7 @@ import argparse
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--csv_file', type=str, default='results/alexnet_examples_original/results.csv')
+parser.add_argument('--csv_file', type=str, default='results/alexnet/12/results.csv')
 
 args = parser.parse_args()
 

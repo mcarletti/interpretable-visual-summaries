@@ -9,8 +9,8 @@ def get_params():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--modelname', type=str, default='alexnet')
-    parser.add_argument('--impath', type=str, default='results/alexnet_examples_original')
-    parser.add_argument('--top_k', type=int, default=3)
+    parser.add_argument('--impath', type=str, default='results/alexnet/12')
+    parser.add_argument('--top_k', type=int, default=1)
     parser.add_argument('--cuda', type=bool, default=None)
     parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
@@ -62,8 +62,18 @@ for i, d in enumerate(dirs[:nb_img_to_compute]):
     blurred_img_numpy = cv2.GaussianBlur(scaled_img, (11, 11), 10)
 
     # load mask
-    mask_numpy = cv2.imread(os.path.join(d, 'smooth/mask.png'), 1)
+    mask_numpy_ref = cv2.imread(os.path.join(d, 'smooth/mask.png'), 1)
+    mask_numpy_ref = mask_numpy_ref[:, :, 0]
+    mask_numpy_ref = 1. - np.float32(mask_numpy_ref) / 255
+    mask_bw_ref = np.uint8(255. - mask_numpy_ref * 255.)
+    _, mask_bw_ref = cv2.threshold(mask_bw_ref, 128, 255, cv2.THRESH_BINARY)
+
+    mask_numpy = cv2.imread(os.path.join(d, 'sharp/mask.png'), 1)
     mask_numpy = 1. - np.float32(mask_numpy) / 255
+    # binarize mask
+    # revert the image to correctly compute the regions
+    mask_bw = np.uint8(255. - mask_numpy[:, :, 0] * 255.)
+    _, mask_bw = cv2.threshold(mask_bw, 128, 255, cv2.THRESH_BINARY)
 
     # convert images to torch tensors
     img = utils.preprocess_image(scaled_img, use_cuda=HAS_CUDA)
@@ -96,41 +106,44 @@ for i, d in enumerate(dirs[:nb_img_to_compute]):
     import matplotlib.pyplot as plt
     from skimage.measure import label, regionprops
 
-    # binarize mask
-    # revert the image to correctly compute the regions
-    mask_bw = cv2.cvtColor(np.uint8(255. - mask_numpy * 255.), cv2.COLOR_BGR2GRAY)
-    _, mask_bw = cv2.threshold(mask_bw, 128, 255, cv2.THRESH_BINARY)
-    mask_labeled = label(mask_bw)
-    regions = regionprops(mask_labeled)
 
-    prop_saliency = []
-    doa = []
-    min_area = int(np.prod(target_shape) * 0.01)
-    valid_idx = []
-    for pid, props in enumerate(regions):
-        if props.area < min_area:
-            continue
-        valid_idx.append(pid)
-        # extract proposal mask
-        prop_mask = np.ones(mask_bw.shape, dtype=np.float32)
-        for u, v in props.coords:
-            prop_mask[u, v] = 0.
-        # compute contribution
-        prop_mask = utils.numpy_to_torch(prop_mask, use_cuda=HAS_CUDA)
-        perturbated_input = img.mul(prop_mask) + blurred_img.mul(1 - prop_mask)
-        drop = 1. - predict(model, perturbated_input, category)
-        prop_saliency.append(drop)
-        doa.append(drop / props.area)
-        #print('Region saliency: {:.6f}'.format(prop_saliency[-1]))
+    def eval_regions(bw, thr=0.0):
+        mask_labeled = label(bw)
+        regions = regionprops(mask_labeled)
 
-    prop_saliency = np.asarray(prop_saliency)
-    doa = np.asarray(doa)
-    regions = np.asarray(regions)
+        prop_saliency = []
+        doa = []
+        min_area = int(np.prod(target_shape) * thr)
+        valid_idx = []
+        for pid, props in enumerate(regions):
+            if props.area < min_area:
+                continue
+            valid_idx.append(pid)
+            # extract proposal mask
+            prop_mask = np.ones(bw.shape, dtype=np.float32)
+            for u, v in props.coords:
+                prop_mask[u, v] = 0.
+            # compute contribution
+            prop_mask = utils.numpy_to_torch(prop_mask, use_cuda=HAS_CUDA)
+            perturbated_input = img.mul(prop_mask) + blurred_img.mul(1 - prop_mask)
+            drop = 1. - predict(model, perturbated_input, category)
+            prop_saliency.append(drop)
+            doa.append(drop / props.area)
+            #print('Region saliency: {:.6f}'.format(prop_saliency[-1]))
 
-    idx = np.argsort(prop_saliency)[::-1][:args.top_k]
-    prop_saliency = prop_saliency[idx]
-    doa[idx]
-    regions = regions[valid_idx][idx]
+        prop_saliency = np.asarray(prop_saliency)
+        doa = np.asarray(doa)
+        regions = np.asarray(regions)
+
+        idx = np.argsort(prop_saliency)[::-1][:args.top_k]
+        prop_saliency = prop_saliency[idx]
+        doa[idx]
+        regions = regions[valid_idx][idx]
+
+        return regions, prop_saliency, doa
+
+
+    regions, prop_saliency, doa = eval_regions(mask_bw, 0.01)
 
     panned_prop_saliency = np.zeros((args.top_k,), dtype=np.float32)
     panned_doa = np.zeros((args.top_k,), dtype=np.float32)
@@ -142,7 +155,7 @@ for i, d in enumerate(dirs[:nb_img_to_compute]):
 
     plt.figure(0)
 
-    rows = args.top_k + 1 # +1 for original image
+    rows = args.top_k + 2 # for original image and reference mask (Vedaldi)
     cols = min(12, nb_img_to_compute)
     nb_regions = min(args.top_k, regions.shape[0])
 
@@ -154,13 +167,20 @@ for i, d in enumerate(dirs[:nb_img_to_compute]):
         for u, v in regions[k].coords:
             prop_mask[u, v] = 0.
         bbox = regions[k].bbox
+        convhull_bw = regions[k].convex_image # same size of bbox
         cropped_region = rgb_img[bbox[0]:bbox[2], bbox[1]:bbox[3]]
         # show mask
         plt.subplot(rows, cols, i + 1)
         plt.imshow(rgb_img)
+        plt.imshow(1. - mask_bw_ref, alpha=0.5, cmap=plt.get_cmap('binary'))
+        plt.subplot(rows, cols, i + 1 + cols)
+        plt.imshow(rgb_img)
         plt.imshow(1. - mask_bw, alpha=0.5, cmap=plt.get_cmap('binary'))
-        plt.subplot(rows, cols, i + 1 + cols * (k + 1))
-        plt.imshow(cropped_region)
+        plt.subplot(rows, cols, i + 1 + cols * (k + 2))
+        convhull_bw = np.asarray([convhull_bw] * 3)
+        convhull_bw = np.transpose(convhull_bw, (1, 2, 0))
+        plt.imshow(cropped_region * convhull_bw)
+        #plt.imshow(convhull_bw, alpha=0.2)
         plt.text(0, 0, 'Drop: {:.3f}'.format(prop_saliency[k]), bbox=dict(facecolor='red', alpha=0.5))
         #plt.text(0, 0, 'DoA:  {:.3f}'.format(doa[k]), bbox=dict(facecolor='blue', alpha=0.5))
 
@@ -186,8 +206,8 @@ def show_graphs(title, data, show=False):
     #plt.title(title)
 
 
-show_graphs('K-top saliency (drop)', global_prop_saliency)
-show_graphs('K-top Drop-over-Area (DoA)', global_doa)
+#show_graphs('K-top saliency (drop)', global_prop_saliency)
+#show_graphs('K-top Drop-over-Area (DoA)', global_doa)
 
-plt.tight_layout()
+#plt.tight_layout()
 plt.show()

@@ -18,6 +18,8 @@ def run(class_id, n_samples):
     params = '--target_id %d --max_images %d' % (class_id, n_samples)
     try:
         call(['./run.sh'] + params.split())
+        # NOTE: bash runs a new shell process >> to check <<
+        #call(['bash run.sh'] + params.split())
     except Exception as e:
         print(e)
 

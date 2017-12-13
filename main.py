@@ -28,31 +28,6 @@ def get_params():
     return args
 
 
-args = get_params()
-
-HAS_CUDA = True
-gpu_ids = [0, 1]
-
-'''
-HAS_CUDA = torch.cuda.is_available()
-gpu_ids = [x for x in range(torch.cuda.device_count())]
-'''
-
-Params = recordclass('Params', [
-                            'learning_rate',
-                            'max_iterations',
-                            'tv_beta',
-                            'l1_coeff',
-                            'tv_coeff',
-                            'less_coeff',
-                            'lasso_coeff',
-                            'noise_sigma',
-                            'noise_scale',
-                            'blur',
-                            'target_shape',
-                            'target_id'])
-
-
 def load_mask(filename, target_shape=None, mode='uniform'):
     if filename is not None and os.path.exists(filename):
         mask_init = cv2.imread(filename, 1)
@@ -258,6 +233,31 @@ def run_evaluation(model_info, impath, out_folder=None, gpu_id=0, verbose=False)
 
 if __name__ == '__main__':
 
+    args = get_params()
+
+    HAS_CUDA = True
+    gpu_ids = [0, 1]
+
+    '''
+    HAS_CUDA = torch.cuda.is_available()
+    gpu_ids = [x for x in range(torch.cuda.device_count())]
+    '''
+
+    Params = recordclass('Params', [
+                                'learning_rate',
+                                'max_iterations',
+                                'tv_beta',
+                                'l1_coeff',
+                                'tv_coeff',
+                                'less_coeff',
+                                'lasso_coeff',
+                                'noise_sigma',
+                                'noise_scale',
+                                'blur',
+                                'target_shape',
+                                'target_id'])
+
+
     if os.path.isdir(args.input_path):
 
         dirinfo = os.listdir(args.input_path)
@@ -284,8 +284,19 @@ if __name__ == '__main__':
                     #raise e
 
 
-        from joblib import Parallel, delayed
-        _ = Parallel(n_jobs=len(gpu_ids))(delayed(evaluate_on_gpu)(gid, fnames[gid]) for gid in gpu_ids)
+        try:
+            from joblib import Parallel, delayed
+            n_threads = len(gpu_ids)
+            _ = Parallel(n_jobs=n_threads)(delayed(evaluate_on_gpu)(gid, fnames[gid]) for gid in gpu_ids)
+        except Exception as e:
+            print(e)
+            try:
+                print('Try with single thread...')
+                n_threads = 1
+                _ = Parallel(n_jobs=n_threads)(delayed(evaluate_on_gpu)(gid, fnames[gid]) for gid in gpu_ids)
+            except Exception as e:
+                print(e)
+                quit()
 
 
         def read_csv(filename):

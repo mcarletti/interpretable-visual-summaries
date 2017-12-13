@@ -9,8 +9,8 @@ def get_params():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--modelname', type=str, default='alexnet')
-    parser.add_argument('--impath', type=str, default='results/alexnet/12')
-    parser.add_argument('--top_k', type=int, default=1)
+    parser.add_argument('--impath', type=str, default='/media/Data/datasets/sharp-heatmapts-pt/alexnet/8')
+    parser.add_argument('--top_k', type=int, default=3)
     parser.add_argument('--cuda', type=bool, default=None)
     parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
@@ -63,10 +63,9 @@ for i, d in enumerate(dirs[:nb_img_to_compute]):
 
     # load mask
     mask_numpy_ref = cv2.imread(os.path.join(d, 'smooth/mask.png'), 1)
-    mask_numpy_ref = mask_numpy_ref[:, :, 0]
-    mask_numpy_ref = 1. - np.float32(mask_numpy_ref) / 255
+    mask_numpy_ref = 1. - np.float32(mask_numpy_ref[:, :, 0]) / 255
     mask_bw_ref = np.uint8(255. - mask_numpy_ref * 255.)
-    _, mask_bw_ref = cv2.threshold(mask_bw_ref, 128, 255, cv2.THRESH_BINARY)
+    _, mask_bw_ref = cv2.threshold(mask_bw_ref, 132, 255, cv2.THRESH_BINARY)
 
     mask_numpy = cv2.imread(os.path.join(d, 'sharp/mask.png'), 1)
     mask_numpy = 1. - np.float32(mask_numpy) / 255
@@ -162,25 +161,46 @@ for i, d in enumerate(dirs[:nb_img_to_compute]):
     if i >= cols:
         continue
 
+    regions_ref, _, _ = eval_regions(mask_bw_ref, 0.01)
+    if regions_ref.shape[0] < nb_regions:
+        continue
+
+
+    def get_crop_and_chull(im, prop):
+        bbox = prop.bbox
+        convhull_bw = prop.convex_image # same size of bbox
+        cropped_region = im[bbox[0]:bbox[2], bbox[1]:bbox[3]]
+        if cropped_region.shape[2] == 3:
+            convhull_bw = np.asarray([convhull_bw] * 3)
+            convhull_bw = np.transpose(convhull_bw, (1, 2, 0))
+        return cropped_region, convhull_bw
+
+
     for k in range(nb_regions):
+
         prop_mask = np.ones(mask_bw.shape, dtype=np.float32)
         for u, v in regions[k].coords:
             prop_mask[u, v] = 0.
-        bbox = regions[k].bbox
-        convhull_bw = regions[k].convex_image # same size of bbox
-        cropped_region = rgb_img[bbox[0]:bbox[2], bbox[1]:bbox[3]]
-        # show mask
+
+        crop, chull = get_crop_and_chull(rgb_img, regions[k])
+        crop_ref, chull_ref = get_crop_and_chull(rgb_img, regions_ref[k])
+
         plt.subplot(rows, cols, i + 1)
         plt.imshow(rgb_img)
-        plt.imshow(1. - mask_bw_ref, alpha=0.5, cmap=plt.get_cmap('binary'))
+        #plt.imshow(1. - mask_bw_ref, alpha=0.5, cmap=plt.get_cmap('binary'))
+        plt.imshow(1. - mask_numpy_ref, alpha=0.5, cmap=plt.get_cmap('jet'))
+
         plt.subplot(rows, cols, i + 1 + cols)
         plt.imshow(rgb_img)
         plt.imshow(1. - mask_bw, alpha=0.5, cmap=plt.get_cmap('binary'))
-        plt.subplot(rows, cols, i + 1 + cols * (k + 2))
-        convhull_bw = np.asarray([convhull_bw] * 3)
-        convhull_bw = np.transpose(convhull_bw, (1, 2, 0))
-        plt.imshow(cropped_region * convhull_bw)
-        #plt.imshow(convhull_bw, alpha=0.2)
+
+        plt.subplot(rows, cols, i + 1 + cols + cols * (k + 1))
+        plt.imshow(crop * chull)
+        #plt.imshow(crop_ref * chull_ref)
+        '''err = 1. - (mask_bw + mask_bw_ref) / 2.
+        err = np.uint8(255. - err * 255.)
+        _, err = cv2.threshold(err, 128, 255, cv2.THRESH_BINARY)
+        plt.imshow(err)'''
         plt.text(0, 0, 'Drop: {:.3f}'.format(prop_saliency[k]), bbox=dict(facecolor='red', alpha=0.5))
         #plt.text(0, 0, 'DoA:  {:.3f}'.format(doa[k]), bbox=dict(facecolor='blue', alpha=0.5))
 
@@ -206,8 +226,8 @@ def show_graphs(title, data, show=False):
     #plt.title(title)
 
 
-#show_graphs('K-top saliency (drop)', global_prop_saliency)
-#show_graphs('K-top Drop-over-Area (DoA)', global_doa)
+show_graphs('K-top saliency (drop)', global_prop_saliency)
+show_graphs('K-top Drop-over-Area (DoA)', global_doa)
 
-#plt.tight_layout()
+plt.tight_layout()
 plt.show()

@@ -4,9 +4,9 @@
 
 modelname=alexnet
 outdir=/media/Data/datasets/sharp-heatmapts-pt/$modelname/$2
-#outdir=results/$modelname/$2
-#outdir=results/alexnet_examples_focus
-#outdir=results/googlenet_5k
+#outdir=/media/Data/datasets/sharp-heatmapts-pt/$modelname/$2
+#outdir=/media/Data/datasets/sharp-heatmapts-pt/alexnet_examples_focus
+#outdir=/media/Data/datasets/sharp-heatmapts-pt/googlenet_5k
 outfile=$outdir/results.csv
 
 mkdir -p $outdir

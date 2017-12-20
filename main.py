@@ -22,6 +22,7 @@ def get_params():
     parser.add_argument('--file_ext',     type=str, default='.jpg')
     parser.add_argument('--max_images',   type=int, default=None)
     parser.add_argument('--target_id',    type=int, default=None)
+    parser.add_argument('--class_name',   type=str, default=None)
     parser.add_argument('--no_super_pixel',  action='store_true')
     parser.add_argument('--verbose',      action='store_true')
     args = parser.parse_args()
@@ -289,9 +290,9 @@ if __name__ == '__main__':
             n_threads = len(gpu_ids)
             _ = Parallel(n_jobs=n_threads)(delayed(evaluate_on_gpu)(gid, fnames[gid]) for gid in gpu_ids)
         except Exception as e:
-            print(e)
+            #print(e)
             try:
-                print('Try with single thread...')
+                #print('Try with single thread...')
                 n_threads = 1
                 _ = Parallel(n_jobs=n_threads)(delayed(evaluate_on_gpu)(gid, fnames[gid]) for gid in gpu_ids)
             except Exception as e:

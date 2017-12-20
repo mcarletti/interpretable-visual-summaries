@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# --target_id <CLASS_ID> --max_images <MAX>
+# --target_id <CLASS_ID> --class_name <NAME> --max_images <MAX>
 
 modelname=alexnet
-outdir=/media/Data/datasets/sharp-heatmapts-pt/$modelname/$2
+#outdir=/media/Data/datasets/sharp-heatmapts-pt/$modelname/$2
+outdir=/media/Data/datasets/sharp-heatmapts-pt/user_test/$2_$4
 #outdir=/media/Data/datasets/sharp-heatmapts-pt/$modelname/$2
 #outdir=/media/Data/datasets/sharp-heatmapts-pt/alexnet_examples_focus
 #outdir=/media/Data/datasets/sharp-heatmapts-pt/googlenet_5k
@@ -23,4 +24,4 @@ ext=.JPEG
 python3 main.py --modelname $modelname --input_path $indir --dest_folder $outdir --results_file $outfile --file_ext $ext "$@"
 
 #echo "####################################"
-echo "DONE $2"
+echo "DONE [$2] $4"

@@ -3,6 +3,7 @@
 [M. Carletti](http://marcocarletti.altervista.org/), M. Godi, M. Aghaei, [M. Cristani](http://profs.sci.univr.it/~cristanm/)
 
 Project page: [author's page](http://marcocarletti.altervista.org/publications/understanding-visual-summaries/)
+
 Paper: [https://arxiv.org/](https://arxiv.org/)
 
 ---

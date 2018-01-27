@@ -7,6 +7,8 @@ Project @ [author's page](http://marcocarletti.altervista.org/publications/under
 
 Paper @ [https://arxiv.org/](https://arxiv.org/)
 
+![visual summaries](http://marcocarletti.altervista.org/publications/understanding-visual-summaries/fig1.jpg)
+
 ---
 **NOTE**
 
@@ -25,6 +27,8 @@ You can find [HERE](https://github.com/godimarcovr/interpretable_visual_summarie
 - [Optional] Download [ImageNet](http://image-net.org/download)
 
 ## Usage [1/2]: generate crisp masks
+
+![crisp mask example](http://marcocarletti.altervista.org/content/icpr18.png)
 
 ### Example 1 (single sample):
 

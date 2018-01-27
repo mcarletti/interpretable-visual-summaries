@@ -1,24 +1,33 @@
-# Sharp Heatmaps in PyTorch
+# Understanding Deep Architectures by Interpretable Visual Summaries [1/2]
 
-This is a PyTorch implementation and extension of ***"Interpretable Explanations of Black Boxes by Meaningful Perturbation. Ruth Fong, Andrea Vedaldi"***  with some deviations.
+[M. Carletti](http://marcocarletti.altervista.org/), M. Godi, M. Aghaei, [M. Cristani](http://profs.sci.univr.it/~cristanm/)
 
-This learns a sharp mask of pixels that helps to explain the result of a black box, e.g. a neural network.
-The mask is learned by posing an optimization problem and solving directly for the mask values.
+Project page: [author's page](http://marcocarletti.altervista.org/publications/understanding-visual-summaries/)
+Paper: [https://arxiv.org/](https://arxiv.org/)
 
-This project can use any differentiable model.
+---
+**NOTE**
+The project consists of two parts. Given a set of images belonging to the same class/category, the former part generates a crisp saliency mask for each image in the set. The second part computes a set of visual summaries starting from the crisp masks.
+
+This is the FIRST part of the project.
+You can find [HERE](https://github.com/godimarcovr/interpretable_visual_summaries) the second part of the project concerning the computation of the visual summaries.
+---
+
+## Requirements
+- Install [PyTorch](http://pytorch.org/) and _torchvision_ for Python 3.5
+- Install the following Python 3.5 modules: _numpy_, _cv2_
+- [Optional] To run `rank_regions.py` and `show_regions.py`: _matplotlib_, _skimage_
 
 ## Usage
 
-`python3 main.py --modelname MODEL --input_path IN_PATH --dest_folder OUT_PATH --results_file CSVFILE --file_ext IMG_EXT [--target_id ILSVRC2012_CLASS_ID [--max_images N]]`
+### Example 1 (single sample):
 
-### Example 1 (genereic folder):
+`python3 main.py --modelname alexnet --input_path examples/original/robin3.jpg --dest_folder results/robin3 --results_file results/robin3/results.csv`
+
+### Example 2 (genereic folder):
 
 `python3 main.py --modelname alexnet --input_path examples/original --dest_folder results/alexnet_example_original --results_file results/alexnet_example_original/results.csv --file_ext .jpg`
 
-### Example 2 (images from the same class):
-
-`python3 main.py --modelname alexnet --input_path <path_to>/ImageNet/ILSVRC2012_img_train/234 --dest_folder results/alexnet_imagenet --results_file results/alexnet_imagenet/results.csv --file_ext .JPEG --target_id 234 --max_images 50`
-
-### Example 3 (single sample):
-
-`python3 main.py --modelname alexnet --input_path examples/original/robin3.jpg --dest_folder results/robin3 --results_file results/robin3/results.csv`
+### Example 3 (images from the same class):
+Consider for example class _robin_ (class id = 15)
+`python3 main.py --modelname alexnet --input_path <path_to>/ImageNet/ILSVRC2012_img_train/15 --dest_folder results/alexnet_imagenet --results_file results/alexnet_imagenet/results.csv --file_ext .JPEG --target_id 15 --max_images 50`

@@ -5,7 +5,9 @@
 
 Project @ [author's page](http://marcocarletti.altervista.org/publications/understanding-visual-summaries/)
 
-Paper @ [https://arxiv.org/](https://arxiv.org/)
+Paper @ [PDF](http://marcocarletti.altervista.org/publications/understanding-visual-summaries/understanding-deep-architectures.pdf)
+
+Paper @ [arxiv.com/COMING.SOON]()
 
 ![visual summaries](http://marcocarletti.altervista.org/publications/understanding-visual-summaries/fig1.jpg)
 
@@ -21,10 +23,13 @@ You can find [HERE](https://github.com/godimarcovr/interpretable_visual_summarie
 ---
 
 ## Requirements
-- Install [PyTorch](http://pytorch.org/) and _torchvision_ for Python 3.5
-- Install the following Python 3.5 modules: _numpy_, _cv2_
+To generate crisp saliency maps (first part) you need to install the following libraries:
+- [PyTorch](http://pytorch.org/) and _torchvision_ for Python 3.5
+- Python 3.5 modules: _numpy_, _cv2_
 - [Optional] To run `rank_regions.py` and `show_regions.py`: _matplotlib_, _skimage_
 - [Optional] Download [ImageNet](http://image-net.org/download)
+
+To generate a set of visual summaries (second part) for a specified class you need to follow instructions [HERE](https://github.com/godimarcovr/interpretable_visual_summaries).
 
 ## Usage [1/2]: generate crisp masks
 

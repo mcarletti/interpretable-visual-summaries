@@ -5,9 +5,7 @@
 
 Project @ [author's page](http://marcocarletti.altervista.org/publications/understanding-visual-summaries/)
 
-Paper @ [PDF](http://marcocarletti.altervista.org/publications/understanding-visual-summaries/understanding-deep-architectures.pdf)
-
-Paper @ [arxiv.com/COMING.SOON]()
+Paper @ [https://arxiv.org/abs/1801.09103](https://arxiv.org/abs/1801.09103)
 
 ![visual summaries](http://marcocarletti.altervista.org/publications/understanding-visual-summaries/fig1.jpg)
 

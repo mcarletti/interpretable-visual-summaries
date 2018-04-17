@@ -8,18 +8,23 @@ import os
 def load_model(modelname, use_cuda=False, gpu_id=0):
     '''Load pretrained model.
     '''
-    assert modelname in ['alexnet', 'googlenet', 'vgg']
+    if modelname in ['alexnet', 'googlenet', 'vgg']:
 
-    if modelname == 'alexnet':
-        model = models.alexnet(pretrained=True)
-        target_shape = (224, 224)
+        if modelname == 'alexnet':
+            model = models.alexnet(pretrained=True)
+            target_shape = (224, 224)
 
-    if modelname == 'googlenet':
-        model = models.inception_v3(pretrained=True)
-        target_shape = (299, 299)
+        if modelname == 'googlenet':
+            model = models.inception_v3(pretrained=True)
+            target_shape = (299, 299)
 
-    if modelname == 'vgg':
-        model = models.vgg16(pretrained=True)
+        if modelname == 'vgg':
+            model = models.vgg16(pretrained=True)
+            target_shape = (224, 224)
+
+    else:
+
+        model = torch.load(modelname)
         target_shape = (224, 224)
 
     model.eval()

@@ -84,8 +84,8 @@ def run_evaluation(model_info, impath, out_folder=None, gpu_id=0, verbose=False)
         learning_rate = 0.1,
         max_iterations = 300,
         tv_beta = 3,      # exponential tv factor
-        l1_coeff = 0.01,  # reduces number of masked pixels
-        tv_coeff = 1e-4,  # encourages compact and smooth heatmaps
+        l1_coeff = 0.5,  # reduces number of masked pixels
+        tv_coeff = 1e-2,  # encourages compact and smooth heatmaps
         less_coeff = 0.,  # encourages similarity between predictions
         lasso_coeff = 0., # force masked pixels to binary values
         noise_sigma = 0., # sigma of additional perturbation

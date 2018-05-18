@@ -41,7 +41,7 @@ if __name__ == '__main__':
     '''
 
     class_info = []
-    rc = np.loadtxt(open('RepresentativeClasses.csv'), dtype=object, delimiter='\n')
+    rc = np.loadtxt(open('RepresentativeClasses18.csv'), dtype=object, delimiter='\n')
 
     for x in rc:
         cid = int(re.findall('\d+', x)[0])

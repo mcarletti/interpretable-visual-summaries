@@ -41,7 +41,7 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, gpu_
 
     # compute the target output
     target_preds = model(img)
-    targets = torch.nn.Softmax()(target_preds)
+    targets = torch.nn.Softmax(dim=1)(target_preds)
     category, target_prob, label = utils.get_class_info(targets)
     if verbose:
         print("Category with highest probability:", (label, category, target_prob))
@@ -85,7 +85,7 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, gpu_
         
         # compute current prediction
         preds = model(noisy_perturbated_input)
-        outputs = torch.nn.Softmax()(preds)
+        outputs = torch.nn.Softmax(dim=1)(preds)
 
         # compute the loss and use the regularizers
         class_loss = outputs[0, category]
@@ -120,11 +120,11 @@ def compute_heatmap(model, original_img, params, mask_init, use_cuda=False, gpu_
 
     # compute the prediction probabilities before
     # and after the perturbation and masking
-    outputs = torch.nn.Softmax()(model(perturbated_input))
+    outputs = torch.nn.Softmax(dim=1)(model(perturbated_input))
     output_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
 
     # compute the prediction on the completely blurred image
-    outputs = torch.nn.Softmax()(model(blurred_img))
+    outputs = torch.nn.Softmax(dim=1)(model(blurred_img))
     blurred_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
 
     return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob, np.asarray(loss_history), category
@@ -182,7 +182,7 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
     optimizer = torch.optim.Adam([segm], lr=params.learning_rate)
     
     target_preds = model(img)
-    targets = torch.nn.Softmax()(target_preds)
+    targets = torch.nn.Softmax(dim=1)(target_preds)
     category, target_prob, label = utils.get_class_info(targets)
     if verbose:
         print("Category with highest probability:", (label, category, target_prob))
@@ -207,7 +207,7 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
         noisy_perturbated_input = perturbated_input + noise * params.noise_scale
         
         preds = model(noisy_perturbated_input)
-        outputs = torch.nn.Softmax()(preds)
+        outputs = torch.nn.Softmax(dim=1)(preds)
 
         current_mask = segm # upsampled_mask
 
@@ -235,10 +235,10 @@ def compute_heatmap_using_superpixels(model, original_img, params, mask_init=Non
     perturbated_input = img.mul(upsampled_mask) + \
                         blurred_img.mul(1 - upsampled_mask)
                         
-    outputs = torch.nn.Softmax()(model(perturbated_input))
+    outputs = torch.nn.Softmax(dim=1)(model(perturbated_input))
     output_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
 
-    outputs = torch.nn.Softmax()(model(blurred_img))
+    outputs = torch.nn.Softmax(dim=1)(model(blurred_img))
     blurred_prob = outputs[0, category].data.cpu().squeeze().numpy()[0]
 
     return upsampled_mask, blurred_img_numpy, target_prob, output_prob, blurred_prob, np.asarray(loss_history), category

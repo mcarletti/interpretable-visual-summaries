@@ -8,7 +8,7 @@ import os
 def load_model(modelname, use_cuda=False, gpu_id=0):
     '''Load pretrained model.
     '''
-    if modelname in ['alexnet', 'googlenet', 'vgg']:
+    if modelname in ['alexnet', 'googlenet', 'vgg', 'resnet']:
 
         if modelname == 'alexnet':
             model = models.alexnet(pretrained=True)
@@ -20,6 +20,10 @@ def load_model(modelname, use_cuda=False, gpu_id=0):
 
         if modelname == 'vgg':
             model = models.vgg16(pretrained=True)
+            target_shape = (224, 224)
+
+        if modelname == 'resnet':
+            model = models.resnet50(pretrained=True)
             target_shape = (224, 224)
 
     else:

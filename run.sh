@@ -2,8 +2,8 @@
 
 # --target_id <CLASS_ID> --class_name <NAME> --max_images <MAX>
 
-modelname=alexnet
-outdir=/media/Data/datasets/sharp-heatmapts-pt/user_test/$2_$4
+modelname=resnet
+outdir=/media/Data/datasets/sharp-heatmapts-pt/$modelname/$2_$4
 outfile=$outdir/results.csv
 
 mkdir -p $outdir
@@ -15,7 +15,7 @@ ext=.JPEG
 
 #echo "####################################"
 
-python3 main.py --modelname $modelname --input_path $indir --dest_folder $outdir --results_file $outfile --file_ext $ext "$@"
+python3 main.py --modelname $modelname --input_path $indir --dest_folder $outdir --results_file $outfile --file_ext $ext --no_super_pixel "$@"
 
 #echo "####################################"
 echo "DONE [$2] $4"

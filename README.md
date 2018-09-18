@@ -31,7 +31,7 @@ To generate a set of visual summaries (second part) for a specified class you ne
 
 ## Usage [1/2]: generate crisp masks
 
-![crisp mask example](http://marcocarletti.altervista.org/content/icpr18.png)
+![crisp mask example](http://marcocarletti.altervista.org/content/bmvc18_visual.png)
 
 ### Example 1 (single sample):
 

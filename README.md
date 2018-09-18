@@ -1,11 +1,11 @@
-# Understanding Deep Architectures by Interpretable Visual Summaries [1/2]
+# Understanding Deep Architectures by Visual Summaries [1/2]
 
-### [M. Carletti](http://marcocarletti.altervista.org/), M. Godi, M. Aghaei, [M. Cristani](http://profs.sci.univr.it/~cristanm/)
+### M. Godi, [M. Carletti](http://marcocarletti.altervista.org/), M. Aghaei, F. Giuliari, [M. Cristani](http://profs.sci.univr.it/~cristanm/)
 
 
 Project @ [author's page](http://marcocarletti.altervista.org/publications/understanding-visual-summaries/)
 
-Paper @ [https://arxiv.org/abs/1801.09103](https://arxiv.org/abs/1801.09103)
+Paper @ [BMVC](http://bmvc2018.org/contents/papers/0794.pdf) or [ARXIV](https://arxiv.org/abs/1801.09103)
 
 ![visual summaries](http://marcocarletti.altervista.org/publications/understanding-visual-summaries/fig1.jpg)
 
